@@ -34,21 +34,20 @@ except ImportError:
     DINGTALK_AVAILABLE = False
     print("警告: dingtalk模块不可用，钉钉通知功能将禁用")
 
+from config.config_manager import config_manager
+from data.data_share import data_share
+from utils.error_handler import error_handler
+
 logger = logging.getLogger(__name__)
 
 
 class EnhancedMonitorAgent:
     """增强版系统监控Agent"""
 
-    def __init__(self, config_path: str = "config/monitor_config.json"):
+    def __init__(self):
         """
         初始化监控Agent
-
-        Args:
-            config_path: 配置文件路径
         """
-        self.config_path = config_path
-        self.config = None
         self.running = False
         self.monitor_thread = None
         self.agents_status = {}
@@ -57,20 +56,50 @@ class EnhancedMonitorAgent:
         # 初始化日志
         self._setup_logging()
 
-        # 加载配置
-        self._load_config()
+        # 从配置管理器获取配置
+        self.check_interval = config_manager.get("monitor", "check_interval", 15)
+        self.disk_threshold = config_manager.get("monitor", "disk_threshold", 90)
+        self.memory_threshold = config_manager.get("monitor", "memory_threshold", 85)
+        self.log_size_threshold_mb = config_manager.get("monitor", "log_size_threshold_mb", 100)
+        self.enable_dingtalk = config_manager.get("monitor", "enable_dingtalk", False)
 
         # 初始化钉钉通知器
         self.dingtalk_enabled = False
         self.dingtalk_sender = None
-        if DINGTALK_AVAILABLE and self.config.get("monitor", {}).get("enable_dingtalk", False):
+        if DINGTALK_AVAILABLE and self.enable_dingtalk:
             try:
                 self.dingtalk_sender = DingTalkSender()
                 self.dingtalk_enabled = True
                 logger.info("钉钉通知功能已启用")
             except Exception as e:
                 logger.warning(f"钉钉通知器初始化失败，通知功能将禁用: {e}")
+        
+        # 订阅配置变更
+        config_manager.subscribe("monitor", self._handle_config_change)
 
+    def _handle_config_change(self, new_config, old_config):
+        """处理配置变更"""
+        print(f"监控Agent配置已更新: {new_config}")
+        self.check_interval = new_config.get("check_interval", 15)
+        self.disk_threshold = new_config.get("disk_threshold", 90)
+        self.memory_threshold = new_config.get("memory_threshold", 85)
+        self.log_size_threshold_mb = new_config.get("log_size_threshold_mb", 100)
+        
+        # 检查钉钉通知设置是否变更
+        new_enable_dingtalk = new_config.get("enable_dingtalk", False)
+        if new_enable_dingtalk != self.enable_dingtalk:
+            self.enable_dingtalk = new_enable_dingtalk
+            if self.enable_dingtalk and DINGTALK_AVAILABLE:
+                try:
+                    self.dingtalk_sender = DingTalkSender()
+                    self.dingtalk_enabled = True
+                    logger.info("钉钉通知功能已启用")
+                except Exception as e:
+                    logger.warning(f"钉钉通知器初始化失败，通知功能将禁用: {e}")
+            else:
+                self.dingtalk_enabled = False
+                logger.info("钉钉通知功能已禁用")
+    
     def _setup_logging(self):
         """设置日志"""
         log_dir = "logs"
@@ -86,19 +115,6 @@ class EnhancedMonitorAgent:
                 logging.StreamHandler()
             ]
         )
-
-    def _load_config(self):
-        """加载配置文件"""
-        try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                self.config = json.load(f)
-            logger.info(f"配置文件加载成功: {self.config_path}")
-        except FileNotFoundError:
-            logger.error(f"配置文件不存在: {self.config_path}")
-            self.config = {}
-        except json.JSONDecodeError as e:
-            logger.error(f"配置文件解析失败: {e}")
-            self.config = {}
 
     def _send_dingtalk_notification(self, agent_name: str, event_type: str, message: str = "", extra_data: Dict = None):
         """发送钉钉通知"""
@@ -259,14 +275,12 @@ class EnhancedMonitorAgent:
         if self.dingtalk_enabled:
             self._send_dingtalk_notification("监控Agent", "start", "监控系统已启动")
 
-        check_interval = self.config.get("monitor", {}).get("check_interval", 15)
-
         while self.running:
             try:
                 self.last_check_time = datetime.now()
 
                 # 检查Agent状态
-                agents_config = self.config.get("agents", {})
+                agents_config = config_manager.get_config("agents") or {}
                 for agent_name, agent_config in agents_config.items():
                     status = self.check_agent_status(agent_name, agent_config)
                     self.agents_status[agent_name] = status
@@ -285,9 +299,8 @@ class EnhancedMonitorAgent:
                 resources = self.check_system_resources()
 
                 # 检查磁盘空间告警
-                disk_threshold = self.config.get("monitor", {}).get("disk_threshold", 90)
                 for mountpoint, usage in resources["disk_usage"].items():
-                    if usage["percent"] > disk_threshold:
+                    if usage["percent"] > self.disk_threshold:
                         self._send_system_alert(
                             "磁盘空间告警",
                             "warning",
@@ -296,8 +309,7 @@ class EnhancedMonitorAgent:
                         )
 
                 # 检查内存使用告警
-                memory_threshold = self.config.get("monitor", {}).get("memory_threshold", 85)
-                if resources["memory_percent"] > memory_threshold:
+                if resources["memory_percent"] > self.memory_threshold:
                     self._send_system_alert(
                         "内存使用告警",
                         "warning",
@@ -306,10 +318,9 @@ class EnhancedMonitorAgent:
                     )
 
                 # 检查日志文件大小
-                log_threshold_mb = self.config.get("monitor", {}).get("log_size_threshold_mb", 100)
                 log_info = self.check_log_files()
                 for log_file in log_info["log_files"]:
-                    if log_file["size_mb"] > log_threshold_mb:
+                    if log_file["size_mb"] > self.log_size_threshold_mb:
                         self._send_system_alert(
                             "日志文件过大",
                             "info",
@@ -317,15 +328,24 @@ class EnhancedMonitorAgent:
                             {"filename": log_file["name"], "size_mb": log_file["size_mb"]}
                         )
 
+                # 存储监控数据到数据共享
+                monitor_data = {
+                    "timestamp": datetime.now().isoformat(),
+                    "agents_status": self.agents_status,
+                    "system_resources": resources,
+                    "log_info": log_info
+                }
+                data_share.set("monitor_data", monitor_data)
+
                 # 记录状态
                 logger.info(f"监控检查完成 - Agents: {len(self.agents_status)}, 内存: {resources['memory_percent']}%")
 
                 # 等待下一次检查
-                time.sleep(check_interval)
+                time.sleep(self.check_interval)
 
             except Exception as e:
-                logger.error(f"监控循环异常: {e}")
-                time.sleep(check_interval)
+                error_handler.handle_error(e, "监控循环异常")
+                time.sleep(self.check_interval)
 
     def start(self):
         """启动监控Agent"""
@@ -361,7 +381,7 @@ class EnhancedMonitorAgent:
             "running": self.running,
             "agents_status": self.agents_status,
             "last_check_time": self.last_check_time.isoformat() if self.last_check_time else None,
-            "config_loaded": bool(self.config),
+            "config_loaded": True,  # 配置管理器总是可用
             "dingtalk_enabled": self.dingtalk_enabled
         }
 
@@ -371,14 +391,13 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="增强版系统监控Agent")
-    parser.add_argument("--config", default="config/monitor_config.json", help="配置文件路径")
     parser.add_argument("--start", action="store_true", help="启动监控Agent")
     parser.add_argument("--stop", action="store_true", help="停止监控Agent")
     parser.add_argument("--status", action="store_true", help="查看状态")
     parser.add_argument("--daemon", action="store_true", help="以守护进程方式运行")
     args = parser.parse_args()
 
-    monitor = EnhancedMonitorAgent(args.config)
+    monitor = EnhancedMonitorAgent()
 
     if args.start:
         monitor.start()

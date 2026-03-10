@@ -13,6 +13,9 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dingtalk import DingTalkSender
+from config.config_manager import config_manager
+from data.data_share import data_share
+from utils.error_handler import error_handler
 
 class TradeExecutorAgent:
     def __init__(self, use_simulated=True):
@@ -25,31 +28,107 @@ class TradeExecutorAgent:
         self.trades = []  # 交易记录
         self.balance = 1000000.0  # 模拟资金
         self.positions = {}  # 持仓
+        # 从数据共享获取最新持仓
+        self._load_positions()
+    
+    def _load_positions(self):
+        """从数据共享加载持仓数据"""
+        positions = data_share.get_positions()
+        if positions:
+            self.positions = positions
+            print("[TradeAgent] 已加载持仓数据")
+    
+    def _update_positions_to_share(self):
+        """更新持仓数据到数据共享"""
+        data_share.set_positions(self.positions)
+        print("[TradeAgent] 已更新持仓数据到共享")
 
     def place_order(self, order):
         """下单"""
-        try:
-            # 生成订单ID
-            order_id = f"ORD{uuid.uuid4().hex[:12].upper()}"
+        def fallback():
+            return {"error": "下单失败"}
+
+        return error_handler.try_execute_with_fallback(
+            self._place_real_order,
+            fallback,
+            order
+        )
+    
+    def _place_real_order(self, order):
+        """执行真实下单"""
+        # 生成订单ID
+        order_id = f"ORD{uuid.uuid4().hex[:12].upper()}"
+        
+        # 验证订单参数
+        if not all(key in order for key in ['symbol', 'name', 'side', 'price', 'quantity']):
+            return {"error": "缺少必要参数"}
+
+        # 计算交易金额
+        amount = order['price'] * order['quantity']
+
+        # 检查资金是否充足（买入时）
+        if order['side'] == 'buy' and amount > self.balance:
+            return {"error": "资金不足"}
+
+        # 检查持仓是否充足（卖出时）
+        if order['side'] == 'sell':
+            if order['symbol'] not in self.positions or self.positions[order['symbol']]['quantity'] < order['quantity']:
+                return {"error": "持仓不足"}
+
+        # 创建订单
+        new_order = {
+            "order_id": order_id,
+            "symbol": order['symbol'],
+            "name": order['name'],
+            "side": order['side'],
+            "price": order['price'],
+            "quantity": order['quantity'],
+            "amount": amount,
+            "status": "pending",
+            "timestamp": datetime.now().isoformat(),
+            "strategy": order.get('strategy', 'manual'),
+            "signal_id": order.get('signal_id', '')
+        }
+
+        # 存储订单
+        self.orders[order_id] = new_order
+
+        # 模拟交易执行
+        if self.use_simulated:
+            # 模拟订单执行
+            time.sleep(0.1)  # 模拟网络延迟
+            new_order['status'] = "filled"
+            new_order['filled_timestamp'] = datetime.now().isoformat()
             
-            # 验证订单参数
-            if not all(key in order for key in ['symbol', 'name', 'side', 'price', 'quantity']):
-                return {"error": "缺少必要参数"}
+            # 更新资金和持仓
+            if order['side'] == 'buy':
+                self.balance -= amount
+                if order['symbol'] in self.positions:
+                    self.positions[order['symbol']]['quantity'] += order['quantity']
+                    self.positions[order['symbol']]['entry_price'] = (
+                        self.positions[order['symbol']]['entry_price'] * self.positions[order['symbol']]['quantity'] +
+                        order['price'] * order['quantity']
+                    ) / (self.positions[order['symbol']]['quantity'] + order['quantity'])
+                else:
+                    self.positions[order['symbol']] = {
+                        "symbol": order['symbol'],
+                        "name": order['name'],
+                        "quantity": order['quantity'],
+                        "entry_price": order['price'],
+                        "current_price": order['price']
+                    }
+            else:
+                self.balance += amount
+                self.positions[order['symbol']]['quantity'] -= order['quantity']
+                if self.positions[order['symbol']]['quantity'] == 0:
+                    del self.positions[order['symbol']]
 
-            # 计算交易金额
-            amount = order['price'] * order['quantity']
+            # 更新持仓数据到数据共享
+            self._update_positions_to_share()
 
-            # 检查资金是否充足（买入时）
-            if order['side'] == 'buy' and amount > self.balance:
-                return {"error": "资金不足"}
-
-            # 检查持仓是否充足（卖出时）
-            if order['side'] == 'sell':
-                if order['symbol'] not in self.positions or self.positions[order['symbol']]['quantity'] < order['quantity']:
-                    return {"error": "持仓不足"}
-
-            # 创建订单
-            new_order = {
+            # 记录交易
+            trade = {
+                "trade_id": f"TRADE{uuid.uuid4().hex[:12].upper()}",
                 "order_id": order_id,
                 "symbol": order['symbol'],
                 "name": order['name'],
@@ -57,86 +136,44 @@ class TradeExecutorAgent:
                 "price": order['price'],
                 "quantity": order['quantity'],
                 "amount": amount,
-                "status": "pending",
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": new_order['filled_timestamp'],
                 "strategy": order.get('strategy', 'manual'),
                 "signal_id": order.get('signal_id', '')
             }
+            self.trades.append(trade)
+            self.store_trade(trade)
 
-            # 存储订单
-            self.orders[order_id] = new_order
+            # 发送交易通知
+            self._send_trade_notification(trade)
 
-            # 模拟交易执行
-            if self.use_simulated:
-                # 模拟订单执行
-                time.sleep(0.1)  # 模拟网络延迟
-                new_order['status'] = "filled"
-                new_order['filled_timestamp'] = datetime.now().isoformat()
-                
-                # 更新资金和持仓
-                if order['side'] == 'buy':
-                    self.balance -= amount
-                    if order['symbol'] in self.positions:
-                        self.positions[order['symbol']]['quantity'] += order['quantity']
-                        self.positions[order['symbol']]['entry_price'] = (
-                            self.positions[order['symbol']]['entry_price'] * self.positions[order['symbol']]['quantity'] +
-                            order['price'] * order['quantity']
-                        ) / (self.positions[order['symbol']]['quantity'] + order['quantity'])
-                    else:
-                        self.positions[order['symbol']] = {
-                            "symbol": order['symbol'],
-                            "name": order['name'],
-                            "quantity": order['quantity'],
-                            "entry_price": order['price'],
-                            "current_price": order['price']
-                        }
-                else:
-                    self.balance += amount
-                    self.positions[order['symbol']]['quantity'] -= order['quantity']
-                    if self.positions[order['symbol']]['quantity'] == 0:
-                        del self.positions[order['symbol']]
-
-                # 记录交易
-                trade = {
-                    "trade_id": f"TRADE{uuid.uuid4().hex[:12].upper()}",
-                    "order_id": order_id,
-                    "symbol": order['symbol'],
-                    "name": order['name'],
-                    "side": order['side'],
-                    "price": order['price'],
-                    "quantity": order['quantity'],
-                    "amount": amount,
-                    "timestamp": new_order['filled_timestamp'],
-                    "strategy": order.get('strategy', 'manual'),
-                    "signal_id": order.get('signal_id', '')
-                }
-                self.trades.append(trade)
-                self.store_trade(trade)
-
-                # 发送交易通知
-                self._send_trade_notification(trade)
-
-            return new_order
-        except Exception as e:
-            print(f"[TradeAgent] 下单失败: {e}")
-            return {"error": str(e)}
+        return new_order
 
     def cancel_order(self, order_id):
         """撤单"""
-        try:
-            if order_id not in self.orders:
-                return {"error": "订单不存在", "status": "error"}
+        def fallback():
+            return {"error": "撤单失败", "status": "error"}
 
-            order = self.orders[order_id]
-            if order['status'] != "pending":
-                return {"error": "订单状态不允许撤单", "status": order['status']}
+        return error_handler.try_execute_with_fallback(
+            self._cancel_real_order,
+            fallback,
+            order_id
+        )
+    
+    def _cancel_real_order(self, order_id):
+        """执行真实撤单"""
+        if order_id not in self.orders:
+            return {"error": "订单不存在", "status": "error"}
 
-            # 更新订单状态
-            order['status'] = "cancelled"
-            order['cancelled_timestamp'] = datetime.now().isoformat()
+        order = self.orders[order_id]
+        if order['status'] != "pending":
+            return {"error": "订单状态不允许撤单", "status": order['status']}
 
-            # 发送撤单通知
-            content = f"""
+        # 更新订单状态
+        order['status'] = "cancelled"
+        order['cancelled_timestamp'] = datetime.now().isoformat()
+
+        # 发送撤单通知
+        content = f"""
 📢 订单撤单
 
 📊 订单ID: {order_id}
@@ -148,17 +185,14 @@ class TradeExecutorAgent:
 ⏰ 撤单时间: {datetime.now().strftime('%H:%M:%S')}
 """
 
-            self.sender.send_message(
-                title="📢 订单撤单",
-                content=content,
-                msg_type="markdown",
-                level="info"
-            )
+        self.sender.send_message(
+            title="📢 订单撤单",
+            content=content,
+            msg_type="markdown",
+            level="info"
+        )
 
-            return order
-        except Exception as e:
-            print(f"[TradeAgent] 撤单失败: {e}")
-            return {"error": str(e), "status": "error"}
+        return order
 
     def get_order_status(self, order_id):
         """获取订单状态"""

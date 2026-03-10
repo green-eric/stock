@@ -13,6 +13,9 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dingtalk import DingTalkSender
+from config.config_manager import config_manager
+from data.data_share import data_share
+from utils.error_handler import error_handler
 
 # 尝试解决 jsonpath 依赖问题
 try:
@@ -40,49 +43,63 @@ except ImportError:
 class TechnicalAnalysisAgent:
     def __init__(self):
         self.sender = DingTalkSender()
+        # 从配置获取设置
+        self.analysis_interval = config_manager.get("technical_analysis", "analysis_interval", 900)
         self.watch_list = self.load_watch_list()
+        # 订阅配置变更
+        config_manager.subscribe("technical_analysis", self._handle_config_change)
 
+    def _handle_config_change(self, new_config, old_config):
+        """处理配置变更"""
+        print(f"技术分析Agent配置已更新: {new_config}")
+        self.analysis_interval = new_config.get("analysis_interval", 900)
+    
     def load_watch_list(self):
         """从config/watch_list.txt加载股票监控列表"""
+        def fallback():
+            # 默认股票列表（如果文件不存在或读取失败时使用）
+            default_list = [
+                {"code": "300903", "name": "科翔股份", "price": 0.0},
+                {"code": "600487", "name": "亨通光电", "price": 0.0},
+                {"code": "000070", "name": "特发信息", "price": 0.0},
+                {"code": "300136", "name": "信维通信", "price": 0.0}
+            ]
+            print("使用默认股票监控列表")
+            return default_list
+
+        return error_handler.try_execute_with_fallback(
+            self._load_real_watch_list,
+            fallback
+        )
+    
+    def _load_real_watch_list(self):
+        """加载真实监控列表"""
         watch_list = []
         config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "watch_list.txt")
 
-        # 默认股票列表（如果文件不存在或读取失败时使用）
-        default_list = [
-            {"code": "300903", "name": "科翔股份", "price": 0.0},
-            {"code": "600487", "name": "亨通光电", "price": 0.0},
-            {"code": "000070", "name": "特发信息", "price": 0.0},
-            {"code": "300136", "name": "信维通信", "price": 0.0}
-        ]
+        if not os.path.exists(config_path):
+            print(f"配置文件不存在: {config_path}")
+            raise FileNotFoundError(f"配置文件不存在: {config_path}")
 
-        try:
-            if not os.path.exists(config_path):
-                print(f"配置文件不存在，使用默认列表: {config_path}")
-                return default_list
+        with open(config_path, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                # 跳过空行和注释
+                if not line or line.startswith('#'):
+                    continue
 
-            with open(config_path, 'r', encoding='utf-8') as f:
-                for line_num, line in enumerate(f, 1):
-                    line = line.strip()
-                    # 跳过空行和注释
-                    if not line or line.startswith('#'):
-                        continue
+                parts = line.split(',')
+                if len(parts) >= 2:
+                    code = parts[0].strip()
+                    name = parts[1].strip()
+                    # 价格字段已移除，统一设为0.0（将从实时数据获取）
+                    price = 0.0
+                    watch_list.append({"code": code, "name": name, "price": price})
+                else:
+                    print(f"配置文件第{line_num}行格式错误: {line}")
 
-                    parts = line.split(',')
-                    if len(parts) >= 2:
-                        code = parts[0].strip()
-                        name = parts[1].strip()
-                        # 价格字段已移除，统一设为0.0（将从实时数据获取）
-                        price = 0.0
-                        watch_list.append({"code": code, "name": name, "price": price})
-                    else:
-                        print(f"配置文件第{line_num}行格式错误: {line}")
-
-            print(f"从配置文件加载了 {len(watch_list)} 只股票")
-            return watch_list if watch_list else default_list
-
-        except Exception as e:
-            print(f"加载监控列表失败: {e}，使用默认列表")
-            return default_list
+        print(f"从配置文件加载了 {len(watch_list)} 只股票")
+        return watch_list
 
     def _get_safe_dates(self):
         """获取安全的日期范围，避免未来日期问题"""
@@ -204,26 +221,10 @@ class TechnicalAnalysisAgent:
 
     def analyze_stock(self, stock):
         """分析单只股票"""
-        code = stock["code"]
-        name = stock["name"]
-
-        # 尝试获取真实技术指标
-        real_indicators = self._get_real_indicators(code)
-
-        if real_indicators is not None:
-            # 使用真实数据
-            current_price = real_indicators["price"]
-            change_percent = real_indicators["change_percent"]
-            macd_signal = real_indicators["macd"]
-            rsi_value = real_indicators["rsi"]
-            rsi_status = real_indicators["rsi_status"]
-            volume_ratio = real_indicators["volume_ratio"]
-            kdj_signal = real_indicators["kdj"]
-            ma5 = real_indicators["ma5"]
-            ma10 = real_indicators["ma10"]
-            ma20 = real_indicators["ma20"]
-        else:
+        def fallback():
             # 回退到模拟数据
+            code = stock["code"]
+            name = stock["name"]
             base_price = stock["price"]  # 可能为0
             if base_price <= 0:
                 # 如果没有参考价格，使用随机价格
@@ -240,8 +241,77 @@ class TechnicalAnalysisAgent:
             elif rsi_value < 30:
                 rsi_status = "超卖"
             ma5 = ma10 = ma20 = current_price
+            
+            # 计算综合评分
+            score = 5.0  # 基础分
+            if macd_signal == "金叉":
+                score += 1.5
+            elif macd_signal == "死叉":
+                score -= 1.5
+            if kdj_signal == "超卖":
+                score += 1.0
+            elif kdj_signal == "超买":
+                score -= 1.0
+            if rsi_status == "超卖":
+                score += 0.5
+            elif rsi_status == "超买":
+                score -= 0.5
+            if volume_ratio > 1.2:
+                score += 0.5
+            if ma5 > ma10 > ma20:
+                score += 1.0
+            elif ma5 < ma10 < ma20:
+                score -= 1.0
+            score = max(1.0, min(10.0, score))
+            
+            return {
+                "code": code,
+                "name": name,
+                "price": current_price,
+                "change_percent": change_percent,
+                "indicators": {
+                    "macd": macd_signal,
+                    "kdj": kdj_signal,
+                    "rsi": rsi_value,
+                    "volume_ratio": volume_ratio,
+                    "ma5": ma5,
+                    "ma10": ma10,
+                    "ma20": ma20
+                },
+                "score": score,
+                "signal": "买入" if score >= 7.5 else ("卖出" if score <= 4.0 else "观望")
+            }
 
-        # 计算综合评分（基于真实或模拟指标）
+        return error_handler.try_execute_with_fallback(
+            self._analyze_real_stock,
+            fallback,
+            stock
+        )
+    
+    def _analyze_real_stock(self, stock):
+        """分析真实股票数据"""
+        code = stock["code"]
+        name = stock["name"]
+
+        # 尝试获取真实技术指标
+        real_indicators = self._get_real_indicators(code)
+
+        if real_indicators is None:
+            raise ValueError(f"无法获取股票 {code} 的技术指标")
+
+        # 使用真实数据
+        current_price = real_indicators["price"]
+        change_percent = real_indicators["change_percent"]
+        macd_signal = real_indicators["macd"]
+        rsi_value = real_indicators["rsi"]
+        rsi_status = real_indicators["rsi_status"]
+        volume_ratio = real_indicators["volume_ratio"]
+        kdj_signal = real_indicators["kdj"]
+        ma5 = real_indicators["ma5"]
+        ma10 = real_indicators["ma10"]
+        ma20 = real_indicators["ma20"]
+
+        # 计算综合评分（基于真实指标）
         score = 5.0  # 基础分
 
         if macd_signal == "金叉":
@@ -291,6 +361,17 @@ class TechnicalAnalysisAgent:
 
     def send_analysis_results(self):
         """发送分析结果到钉钉"""
+        def fallback():
+            print("分析结果发送失败，使用模拟数据")
+            return 0
+
+        return error_handler.try_execute_with_fallback(
+            self._send_real_analysis_results,
+            fallback
+        )
+    
+    def _send_real_analysis_results(self):
+        """发送真实分析结果"""
         results = []
         buy_signals = []
 
@@ -300,6 +381,14 @@ class TechnicalAnalysisAgent:
 
             if result["signal"] == "买入" and result["score"] >= 7.5:
                 buy_signals.append(result)
+
+        # 存储分析结果到数据共享
+        analysis_data = {
+            "timestamp": datetime.now().isoformat(),
+            "results": results,
+            "buy_signals": buy_signals
+        }
+        data_share.set_analysis_results(analysis_data)
 
         # 如果有买入信号，发送详细分析
         if buy_signals:
@@ -334,23 +423,22 @@ class TechnicalAnalysisAgent:
                     level="urgent"
                 )
 
-        # 保存分析结果
+        # 保存分析结果到文件
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         data_dir = os.path.join(project_root, "data")
         os.makedirs(data_dir, exist_ok=True)
 
         result_file = os.path.join(data_dir, f"analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.json")
         with open(result_file, 'w', encoding='utf-8') as f:
-            json.dump({
-                "timestamp": datetime.now().isoformat(),
-                "results": results
-            }, f, indent=2, ensure_ascii=False)
+            json.dump(analysis_data, f, indent=2, ensure_ascii=False)
 
         return len(buy_signals)
 
-    def run(self, interval=900):  # 默认15分钟
+    def run(self, interval=None):  # 默认使用配置中的间隔
         """运行Agent"""
-        print(f"技术分析Agent启动，间隔: {interval}秒")
+        # 使用配置中的间隔时间，如果没有提供
+        run_interval = interval or self.analysis_interval
+        print(f"技术分析Agent启动，间隔: {run_interval}秒")
 
         while True:
             try:
@@ -365,13 +453,13 @@ class TechnicalAnalysisAgent:
                     if buy_count > 0:
                         print(f"发现 {buy_count} 个买入信号")
 
-                time.sleep(interval)
+                time.sleep(run_interval)
 
             except KeyboardInterrupt:
                 print("\n技术分析Agent停止")
                 break
             except Exception as e:
-                print(f"技术分析错误: {e}")
+                error_handler.handle_error(e, "技术分析Agent运行时")
                 time.sleep(60)
 
 if __name__ == "__main__":
