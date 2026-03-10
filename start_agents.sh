@@ -156,10 +156,11 @@ stop_monitor_agent() {
 import sys
 sys.path.insert(0, '.')
 try:
-    from dingtalk_notifier import init_notifier, notify_agent_event
-    notifier = init_notifier('config/dingtalk.json')
-    if notifier:
-        notify_agent_event('系统', 'stop', '多Agent炒股系统已停止')
+    from dingtalk import DingTalkSender
+    sender = DingTalkSender('config/dingtalk.json')
+    if sender:
+        message = '多Agent炒股系统已停止'
+        sender.send_message(message, title='系统停止通知', level='info')
         print('钉钉停止通知发送成功')
 except Exception as e:
     print(f'钉钉通知发送失败: {e}')
@@ -327,14 +328,12 @@ main() {
 import sys
 sys.path.insert(0, '.')
 try:
-    from dingtalk_notifier import init_notifier
-    notifier = init_notifier('config/dingtalk.json')
-    if notifier:
-        success = notifier.test_connection()
-        if success:
-            print('钉钉连接测试成功')
-        else:
-            print('钉钉连接测试失败')
+    from dingtalk import DingTalkSender
+    sender = DingTalkSender('config/dingtalk.json')
+    if sender:
+        message = '钉钉连接测试成功'
+        sender.send_message(message, title='测试通知', level='info')
+        print('钉钉连接测试成功')
     else:
         print('钉钉通知器初始化失败')
 except Exception as e:

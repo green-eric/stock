@@ -2,16 +2,35 @@
   "agents": {
     "monitor": {
       "enabled": true,
-      "script": "agents/monitor.sh",
+      "script": "agents/monitor_agent.py",
       "interval": 60
     },
-    "trader": {
+    "data_collector": {
       "enabled": true,
-      "script": "agents/trader.py"
+      "script": "agents/data_agent.py"
     },
-    "analyzer": {
+    "technical_analysis": {
       "enabled": true,
-      "script": "agents/analyzer.py"
+      "script": "agents/technical_agent.py"
+    },
+    "trade_executor": {
+      "enabled": true,
+      "script": "agents/trade_agent.py"
+    },
+    "risk_controller": {
+      "enabled": true,
+      "script": "agents/risk_agent.py"
+    },
+    "strategy_optimizer": {
+      "enabled": true,
+      "script": "agents/strategy_agent.py"
     }
+  },
+  "monitor": {
+    "enable_dingtalk": true,
+    "check_interval": 15,
+    "disk_threshold": 90,
+    "memory_threshold": 85,
+    "log_size_threshold_mb": 100
   }
 }

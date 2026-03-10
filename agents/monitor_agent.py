@@ -28,11 +28,11 @@ except ImportError:
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from dingtalk_notifier import init_notifier, notify_agent_event, notify_system_alert
+    from dingtalk import DingTalkSender
     DINGTALK_AVAILABLE = True
 except ImportError:
     DINGTALK_AVAILABLE = False
-    print("警告: dingtalk_notifier模块不可用，钉钉通知功能将禁用")
+    print("警告: dingtalk模块不可用，钉钉通知功能将禁用")
 
 logger = logging.getLogger(__name__)
 
@@ -62,13 +62,14 @@ class EnhancedMonitorAgent:
 
         # 初始化钉钉通知器
         self.dingtalk_enabled = False
+        self.dingtalk_sender = None
         if DINGTALK_AVAILABLE and self.config.get("monitor", {}).get("enable_dingtalk", False):
-            notifier = init_notifier("config/dingtalk.json")
-            if notifier:
+            try:
+                self.dingtalk_sender = DingTalkSender()
                 self.dingtalk_enabled = True
                 logger.info("钉钉通知功能已启用")
-            else:
-                logger.warning("钉钉通知器初始化失败，通知功能将禁用")
+            except Exception as e:
+                logger.warning(f"钉钉通知器初始化失败，通知功能将禁用: {e}")
 
     def _setup_logging(self):
         """设置日志"""
@@ -105,8 +106,21 @@ class EnhancedMonitorAgent:
             return
 
         try:
-            from dingtalk_notifier import notify_agent_event
-            notify_agent_event(agent_name, event_type, message, extra_data)
+            content = f"""
+📢 Agent事件通知
+
+📊 Agent: {agent_name}
+🔄 事件类型: {event_type}
+📝 消息: {message}
+
+⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+"""
+            self.dingtalk_sender.send_message(
+                title=f"📢 {agent_name} - {event_type}",
+                content=content,
+                msg_type="markdown",
+                level="info"
+            )
         except Exception as e:
             logger.error(f"钉钉通知发送失败: {e}")
 
@@ -116,8 +130,26 @@ class EnhancedMonitorAgent:
             return
 
         try:
-            from dingtalk_notifier import notify_system_alert
-            notify_system_alert(alert_type, severity, message, details)
+            content = f"""
+🚨 系统告警
+
+📊 告警类型: {alert_type}
+⚡ 严重程度: {severity}
+📝 消息: {message}
+
+"""
+            if details:
+                content += "📋 详情:\n"
+                for key, value in details.items():
+                    content += f"- {key}: {value}\n"
+            content += f"\n⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            level = "urgent" if severity == "critical" else "warning" if severity == "warning" else "info"
+            self.dingtalk_sender.send_message(
+                title=f"🚨 {alert_type}",
+                content=content,
+                msg_type="markdown",
+                level=level
+            )
         except Exception as e:
             logger.error(f"系统告警发送失败: {e}")
 
