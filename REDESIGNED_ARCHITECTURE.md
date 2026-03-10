@@ -846,6 +846,6 @@ docker-compose -f docker-compose.prod.yml logs -f
 
 ---
 
-**文档版本**: v2.0
+**文档版本**: v1.0.2
 **最后更新**: 2026-03-10
 **维护者**: 系统团队
