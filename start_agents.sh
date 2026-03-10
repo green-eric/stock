@@ -63,7 +63,7 @@ send_start_notification() {
 import sys
 sys.path.insert(0, '.')
 try:
-    from dingtalk_sender import DingTalkSender
+    from dingtalk import DingTalkSender
     sender = DingTalkSender('config/dingtalk.json')
     if sender:
         message = '多Agent炒股系统启动完成'

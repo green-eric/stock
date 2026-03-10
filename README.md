@@ -6,7 +6,7 @@
 
 ### 📊 实施状态
 
-**当前版本**: v1.0.2 (AKShare真实数据版)
+**当前版本**: v1.0.5 (AKShare真实数据版)
 **最后更新**: 2026-03-10
 **系统状态**: ✅ 核心功能已实现，运行稳定
 
@@ -100,9 +100,9 @@
 ├── 📜 REDESIGNED_ARCHITECTURE.md  # 架构文档
 ├── 📜 SYSTEM_DOCUMENTATION.md    # 系统文档
 ├── 📜 TECHNICAL_DOCUMENT.md      # 技术文档
-├── 📜 dingtalk_sender.py         # 钉钉消息发送器
+├── 📜 dingtalk.py                # 钉钉消息发送器
 ├── 📜 docker-compose.yml         # Docker Compose配置
-├── 📜 list_akshare_funcs.py      # AKShare函数列表
+├── 📜 akshare_list.py             # AKShare函数列表
 ├── 📜 prometheus.yml             # Prometheus配置
 ├── 📜 requirements.txt           # 依赖包
 └── 📜 start_agents.sh            # 系统启动脚本
@@ -521,7 +521,7 @@ docker-compose logs monitor_agent
 
 #### 钉钉消息发送器
 ```python
-from dingtalk_sender import DingTalkSender
+from dingtalk import DingTalkSender
 
 # 初始化
 sender = DingTalkSender(config_file="/path/to/config.json")
@@ -635,6 +635,7 @@ sender.send_stock_alert(
   - 超短线策略
   - 风险控制系统
 
+- **v1.0.5** (2026-03-10): 文件名称优化，系统逻辑梳理
 - **v1.0.2** (2026-03-10): 功能增强
   - 新增风险控制Agent
   - 新增交易执行Agent
@@ -645,5 +646,5 @@ sender.send_stock_alert(
 ---
 
 **最后更新**: 2026-03-10
-**版本**: v1.0.2
+**版本**: v1.0.5
 **状态**: ✅ 生产就绪

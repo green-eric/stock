@@ -11,7 +11,7 @@ from datetime import datetime
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from dingtalk_sender import DingTalkSender
+from dingtalk import DingTalkSender
 
 # 尝试导入akshare，如果失败则使用模拟数据
 try:
