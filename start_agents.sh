@@ -82,7 +82,7 @@ except Exception as e:
 start_monitor_agent() {
     log "启动监控Agent..."
 
-    local monitor_script="$AGENTS_DIR/monitor_enhanced.py"
+    local monitor_script="$AGENTS_DIR/monitor_agent.py"
     local config_file="$CONFIG_DIR/monitor_config.json"
 
     if [[ ! -f "$monitor_script" ]]; then
