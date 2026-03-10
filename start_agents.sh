@@ -63,10 +63,11 @@ send_start_notification() {
 import sys
 sys.path.insert(0, '.')
 try:
-    from dingtalk_notifier import init_notifier, notify_agent_event
-    notifier = init_notifier('config/dingtalk.json')
-    if notifier:
-        notify_agent_event('系统', 'start', '多Agent炒股系统启动完成')
+    from dingtalk_sender import DingTalkSender
+    sender = DingTalkSender('config/dingtalk.json')
+    if sender:
+        message = '多Agent炒股系统启动完成'
+        sender.send_message(message, title='系统启动通知', level='info')
         print('钉钉启动通知发送成功')
     else:
         print('钉钉通知器初始化失败')
