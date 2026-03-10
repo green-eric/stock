@@ -1,0 +1,8 @@
+{
+    "agent_id": "strategy_analyzer",
+    "agent_name": "策略分析Agent",
+    "enabled": true,
+    "check_interval": 5000,
+    "max_retries": 3,
+    "log_file": "/workspace/project/logs/strategy_analyzer.log"
+}

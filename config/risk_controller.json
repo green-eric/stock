@@ -1,0 +1,8 @@
+{
+    "agent_id": "risk_controller",
+    "agent_name": "风险控制Agent",
+    "enabled": true,
+    "check_interval": 5000,
+    "max_retries": 3,
+    "log_file": "/workspace/project/logs/risk_controller.log"
+}

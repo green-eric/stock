@@ -1,0 +1,17 @@
+{
+  "agents": {
+    "monitor": {
+      "enabled": true,
+      "script": "agents/monitor.sh",
+      "interval": 60
+    },
+    "trader": {
+      "enabled": true,
+      "script": "agents/trader.py"
+    },
+    "analyzer": {
+      "enabled": true,
+      "script": "agents/analyzer.py"
+    }
+  }
+}
