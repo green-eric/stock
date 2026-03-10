@@ -147,11 +147,13 @@ class TestTradeAgent(unittest.TestCase):
         place_result = self.agent.place_order(order)
         order_id = place_result['order_id']
         
-        # 再撤单
+        # 再撤单（在模拟交易模式下，订单会立即成交，撤单应该失败）
         cancel_result = self.agent.cancel_order(order_id)
         self.assertIsInstance(cancel_result, dict)
         self.assertIn('status', cancel_result)
-        self.assertEqual(cancel_result['status'], 'cancelled')
+        self.assertEqual(cancel_result['status'], 'filled')
+        self.assertIn('error', cancel_result)
+        self.assertEqual(cancel_result['error'], '订单状态不允许撤单')
     
     def test_get_order_status(self):
         """测试获取订单状态"""

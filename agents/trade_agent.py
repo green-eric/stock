@@ -125,11 +125,11 @@ class TradeExecutorAgent:
         """撤单"""
         try:
             if order_id not in self.orders:
-                return {"error": "订单不存在"}
+                return {"error": "订单不存在", "status": "error"}
 
             order = self.orders[order_id]
             if order['status'] != "pending":
-                return {"error": "订单状态不允许撤单"}
+                return {"error": "订单状态不允许撤单", "status": order['status']}
 
             # 更新订单状态
             order['status'] = "cancelled"
@@ -158,7 +158,7 @@ class TradeExecutorAgent:
             return order
         except Exception as e:
             print(f"[TradeAgent] 撤单失败: {e}")
-            return {"error": str(e)}
+            return {"error": str(e), "status": "error"}
 
     def get_order_status(self, order_id):
         """获取订单状态"""
