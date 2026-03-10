@@ -82,14 +82,13 @@
 ├── 📂 data/                      # 数据存储
 │   └── storage.py                # 数据存储模块
 ├── 📂 docs/                      # 文档
-│   ├── AKSHARE_INTEGRATION.md    # AKShare集成文档
-│   ├── ARCHITECTURE.md           # 架构文档
-│   ├── COMPLETE_SOLUTION.md      # 完整解决方案
-│   ├── MAINTENANCE_GUIDE.md      # 维护指南
-│   ├── REDESIGNED_ARCHITECTURE.md # 重新设计的架构
-│   ├── TEST_PLAN.md              # 测试计划
-│   ├── USER_GUIDE.md             # 用户指南
-│   └── USER_MANUAL.md            # 用户手册
+│   ├── AK_SHARE.md               # AKShare集成文档
+│   ├── ARCH.md                   # 架构文档
+│   ├── SOLUTION.md               # 完整解决方案
+│   ├── MAINTENANCE.md            # 维护指南
+│   ├── TEST.md                   # 测试计划
+│   ├── GUIDE.md                  # 用户指南
+│   └── MANUAL.md                 # 用户手册
 ├── 📂 tests/                     # 测试用例
 │   ├── test_agents.py            # Agent测试
 │   └── test_storage.py           # 存储测试
@@ -97,9 +96,7 @@
 ├── 📜 Dockerfile.agent           # Agent服务Dockerfile
 ├── 📜 Dockerfile.api             # API服务Dockerfile
 ├── 📜 README.md                  # 本文档
-├── 📜 REDESIGNED_ARCHITECTURE.md  # 架构文档
-├── 📜 SYSTEM_DOCUMENTATION.md    # 系统文档
-├── 📜 TECHNICAL_DOCUMENT.md      # 技术文档
+
 ├── 📜 dingtalk.py                # 钉钉消息发送器
 ├── 📜 docker-compose.yml         # Docker Compose配置
 ├── 📜 akshare_list.py             # AKShare函数列表
@@ -624,9 +621,11 @@ sender.send_stock_alert(
 - **邮件**: 联系项目维护者
 
 ### 文档资源
-- [系统架构设计](REDESIGNED_ARCHITECTURE.md)
-- [系统文档](SYSTEM_DOCUMENTATION.md)
-- [技术文档](TECHNICAL_DOCUMENT.md)
+- [系统架构设计](docs/ARCH.md)
+- [完整解决方案](docs/SOLUTION.md)
+- [测试计划](docs/TEST.md)
+- [用户指南](docs/GUIDE.md)
+- [用户手册](docs/MANUAL.md)
 
 ### 更新日志
 - **v1.0** (2026-03-08): 初始版本发布
