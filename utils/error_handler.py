@@ -43,6 +43,16 @@ class ErrorHandler:
         self.logger.error(error_msg)
         self.logger.error(traceback.format_exc())
         
+        # 错误分类处理
+        if isinstance(error, (ConnectionError, TimeoutError)):
+            self.logger.warning(f"网络错误: {error_msg}，可能需要检查网络连接")
+        elif isinstance(error, (FileNotFoundError, IOError)):
+            self.logger.warning(f"文件错误: {error_msg}，可能需要检查文件路径")
+        elif isinstance(error, KeyError):
+            self.logger.warning(f"键错误: {error_msg}，可能需要检查数据结构")
+        elif isinstance(error, ValueError):
+            self.logger.warning(f"值错误: {error_msg}，可能需要检查输入参数")
+        
         if fallback:
             try:
                 return fallback()

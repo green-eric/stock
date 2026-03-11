@@ -61,8 +61,21 @@ class DataCollectorAgent:
             fallback,
             current_time
         )
-        data_share.set_market_data(data)
-        return data
+        
+        # 验证数据完整性
+        if data and isinstance(data, dict):
+            if 'hot_sectors' not in data:
+                data['hot_sectors'] = []
+            if 'capital_flow' not in data:
+                data['capital_flow'] = {}
+            data_share.set_market_data(data)
+            return data
+        else:
+            # 如果数据无效，使用模拟数据
+            print("数据无效，使用模拟数据")
+            data = self._get_mock_data(current_time)
+            data_share.set_market_data(data)
+            return data
     
     def _get_real_market_data(self, current_time):
         """获取真实市场数据"""

@@ -73,18 +73,26 @@ class DataShare:
             notify: 是否通知回调函数
         """
         with self.lock:
-            old_value = self.data.get(key)
-            self.data[key] = value
-            # 检查是否需要立即保存
-            if (datetime.now() - self.last_save_time).total_seconds() > self.auto_save_interval:
-                self._save_data()
-            # 通知回调
-            if notify and key in self.callbacks:
-                for callback in self.callbacks[key]:
-                    try:
-                        callback(value, old_value)
-                    except Exception as e:
-                        print(f"回调函数执行失败: {e}")
+            try:
+                # 验证键名
+                if not isinstance(key, str) or not key:
+                    print("数据键必须是非空字符串")
+                    return
+                
+                old_value = self.data.get(key)
+                self.data[key] = value
+                # 检查是否需要立即保存
+                if (datetime.now() - self.last_save_time).total_seconds() > self.auto_save_interval:
+                    self._save_data()
+                # 通知回调
+                if notify and key in self.callbacks:
+                    for callback in self.callbacks[key]:
+                        try:
+                            callback(value, old_value)
+                        except Exception as e:
+                            print(f"回调函数执行失败: {e}")
+            except Exception as e:
+                print(f"设置数据失败: {e}")
     
     def get(self, key: str, default: Any = None, max_age: Optional[int] = None) -> Any:
         """

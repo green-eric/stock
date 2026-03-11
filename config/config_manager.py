@@ -43,6 +43,10 @@ class ConfigManager:
     def _load_all_configs(self):
         """加载所有配置文件"""
         try:
+            if not os.path.exists(self.config_dir):
+                print(f"配置目录不存在: {self.config_dir}")
+                return
+                
             config_files = os.listdir(self.config_dir)
             for file_name in config_files:
                 if file_name.endswith('.json'):
@@ -51,6 +55,11 @@ class ConfigManager:
                     try:
                         with open(config_path, 'r', encoding='utf-8') as f:
                             new_config = json.load(f)
+                            # 验证配置格式
+                            if not isinstance(new_config, dict):
+                                print(f"配置文件 {file_name} 格式错误: 必须是字典格式")
+                                continue
+                            
                             # 检查配置是否有变化
                             old_config = self.configs.get(config_name)
                             self.configs[config_name] = new_config
@@ -61,6 +70,8 @@ class ConfigManager:
                                         callback(new_config, old_config)
                                     except Exception as e:
                                         print(f"配置回调函数执行失败: {e}")
+                    except json.JSONDecodeError as e:
+                        print(f"配置文件 {file_name} 解析失败: {e}")
                     except Exception as e:
                         print(f"加载配置文件 {file_name} 失败: {e}")
         except Exception as e:

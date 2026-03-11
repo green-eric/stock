@@ -1,8 +1,8 @@
 {
     "system_name": "多Agent炒股系统",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "agents": 5,
-    "market_data_source": "模拟数据",
+    "market_data_source": "AKShare真实数据",
     "trade_api": "模拟交易",
     "risk_limit": 0.1,
     "max_position": 1000000,

@@ -223,9 +223,9 @@ class TechnicalAnalysisAgent:
         """分析单只股票"""
         def fallback():
             # 回退到模拟数据
-            code = stock["code"]
-            name = stock["name"]
-            base_price = stock["price"]  # 可能为0
+            code = stock.get("code", "未知")
+            name = stock.get("name", "未知")
+            base_price = stock.get("price", 0)  # 可能为0
             if base_price <= 0:
                 # 如果没有参考价格，使用随机价格
                 base_price = random.uniform(10, 200)
@@ -281,6 +281,11 @@ class TechnicalAnalysisAgent:
                 "score": score,
                 "signal": "买入" if score >= 7.5 else ("卖出" if score <= 4.0 else "观望")
             }
+
+        # 验证股票数据
+        if not isinstance(stock, dict) or "code" not in stock:
+            print(f"无效的股票数据: {stock}")
+            return fallback()
 
         return error_handler.try_execute_with_fallback(
             self._analyze_real_stock,
