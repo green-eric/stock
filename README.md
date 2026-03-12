@@ -6,25 +6,19 @@
 
 ### 📊 实施状态
 
-**当前版本**: v1.1.0 (AKShare真实数据版)
-**最后更新**: 2026-03-10
+**当前版本**: v1.1 (AKShare真实数据版)
+**最后更新**: 2026-03-08
 **系统状态**: ✅ 核心功能已实现，运行稳定
 
 #### 🎯 已实现功能
 | 模块 | 状态 | 说明 |
 |------|------|------|
-| **数据采集Agent** | ✅   正常   | AKShare真实热点板块、资金流向数据（智能降级机制），5分钟间隔（仅交易时段） |
-| **技术分析Agent** | ✅   正常   | 基于配置文件监控列表的模拟技术分析，15分钟间隔（仅交易时段） |
-| **风险控制Agent** | ✅   正常   | 监控市场风险和持仓风险，执行止损操作 |
-| **交易执行Agent** | ✅   正常   | 执行买卖操作，管理交易订单 |
-| **策略优化Agent** | ✅   正常   | 基于历史数据优化交易策略 |
-| **系统监控Agent** | ✅   正常   | 实时监控Agent状态，30分钟间隔（全天运行） |
-| **钉钉集成**      | ✅   正常   | 签名校验、消息推送、速率限制 |
-| **数据存储**      | ✅   正常   | Redis实时数据，PostgreSQL历史数据 |
-| **API接口**       | ✅   正常   | FastAPI接口，支持系统管理和数据查询 |
-| **配置管理服务**   | ✅   正常   | 统一配置管理，实时配置更新，配置变更通知 |
-| **数据共享服务**   | ✅   正常   | 实时数据共享，数据持久化，数据变更通知 |
-| **错误处理服务**   | ✅   正常   | 统一错误处理，错误重试机制，错误统计分析 |
+| **数据采集Agent** | ✅ 运行中 | AKShare真实热点板块、资金流向数据（智能降级机制），5分钟间隔（仅交易时段） |
+| **技术分析Agent** | ✅ 运行中 | 基于配置文件监控列表的模拟技术分析，15分钟间隔（仅交易时段） |
+| **系统监控Agent** | ✅ 运行中 | 实时监控Agent状态，30分钟间隔（全天运行） |
+| **钉钉集成** | ✅ 正常 | 签名校验、消息推送、速率限制 |
+| **文件存储** | ✅ 正常 | JSON格式数据文件，按时间戳保存 |
+| **进程管理** | ✅ 正常 | Shell脚本启动/停止/状态监控 |
 
 #### ⚠️ 注意事项
 1. **混合数据源**: 数据采集Agent使用AKShare真实数据（智能降级机制），技术分析Agent使用模拟分析（可配置监控列表）
@@ -32,25 +26,26 @@
 3. **无实盘交易**: 仅信号推送，不执行实际买卖操作
 4. **简化指标**: 技术分析基于模拟MACD/KDJ/RSI/成交量指标，可从配置文件扩展监控股票
 
+#### 🚀 后续演进
+- ✅ **真实数据源**: 已接入AKShare获取实时行情（数据采集Agent）
+- 🔄 **增强分析**: 实现真实技术指标计算（技术分析Agent）
+- **交易接口**: 支持模拟盘/实盘交易
+- **可视化**: 添加Web管理控制台
+- **配置文件化**: 技术分析Agent监控列表已支持config/watch_list.txt配置文件
+
 ### 🎯 核心特性
 
-- **🤖 多Agent协同**: 数据采集、技术分析、风险控制、交易执行、策略优化、系统监控六大Agent协同工作
+- **🤖 多Agent协同**: 数据采集、技术分析、系统监控三大Agent协同工作
 - **📱 钉钉集成**: 实时消息推送，支持签名校验和关键词过滤
 - **⚡ 超短线优化**: 专为1-3天持股周期设计的热点追踪策略
 - **🔐 风险控制**: 完整的仓位管理、止损机制和熔断保护
 - **🔄 自动化运行**: 定时任务，7×24小时不间断监控
-- **📊 数据存储**: Redis实时数据，PostgreSQL历史数据
-- **🌐 API接口**: FastAPI接口，支持系统管理和数据查询
-- **📈 监控系统**: Prometheus + Grafana监控，ELK Stack日志管理
-- **⚙️ 配置管理**: 统一配置管理，实时配置更新，配置变更通知
-- **🔄 数据共享**: 实时数据共享，数据持久化，数据变更通知
-- **🛡️ 错误处理**: 统一错误处理，错误重试机制，错误统计分析
 
 ### 🚀 快速开始
 
 ```bash
 # 1. 检查系统配置
-./start_agents.sh status
+./start_agents.sh check
 
 # 2. 启动所有Agent
 ./start_agents.sh start
@@ -68,51 +63,27 @@
 
 ```
 ./
-├── 📂 agents/                    # Agent核心代码
-│   ├── data_agent.py             # 数据采集Agent
-│   ├── technical_agent.py        # 技术分析Agent
-│   ├── risk_agent.py             # 风险控制Agent
-│   ├── trade_agent.py            # 交易执行Agent
-│   ├── strategy_agent.py         # 策略优化Agent
-│   ├── monitor_agent.py          # 系统监控Agent
-│   └── dingtalk_integration.md   # 钉钉集成架构设计
-├── 📂 api/                       # API接口
-│   └── main.py                   # API主文件
 ├── 📂 config/                    # 配置文件
-│   ├── data_collector.json       # 数据采集配置
-│   ├── monitor_config.json       # 监控配置
-│   ├── risk_controller.json      # 风险控制配置
-│   ├── strategy_analyzer.json    # 策略分析配置
-│   ├── system.json               # 系统配置
-│   ├── watch_list.txt            # 监控股票列表
-│   └── config_manager.py         # 配置管理模块
+│   ├── dingtalk.json                   # 钉钉集成配置
+│   ├── dingtalk_example.json           # 钉钉配置示例
+│   └── dingtalk_connection_success.json # 连接成功记录
+├── 📂 agents/                    # Agent核心代码
+│   ├── data_agent.py                   # 数据采集Agent
+│   ├── technical_agent.py              # 技术分析Agent
+│   ├── monitor_agent_simple.py         # 系统监控Agent
+│   └── dingtalk_integration.md         # 钉钉集成架构设计
 ├── 📂 data/                      # 数据存储
-│   └── storage.py                # 数据存储模块
-├── 📂 utils/                     # 工具模块
-│   ├── error_handler.py          # 错误处理模块
-│   └── data_share.py             # 数据共享模块
-├── 📂 docs/                      # 文档
-│   ├── AK_SHARE.md               # AKShare集成文档
-│   ├── ARCH.md                   # 架构文档
-│   ├── SOLUTION.md               # 完整解决方案
-│   ├── MAINTENANCE.md            # 维护指南
-│   ├── TEST.md                   # 测试计划
-│   ├── GUIDE.md                  # 用户指南
-│   └── MANUAL.md                 # 用户手册
-├── 📂 tests/                     # 测试用例
-│   ├── test_agents.py            # Agent测试
-│   └── test_storage.py           # 存储测试
-├── 📜 .gitignore                 # Git忽略文件
-├── 📜 Dockerfile.agent           # Agent服务Dockerfile
-├── 📜 Dockerfile.api             # API服务Dockerfile
-├── 📜 README.md                  # 本文档
-
-├── 📜 dingtalk.py                # 钉钉消息发送器
-├── 📜 docker-compose.yml         # Docker Compose配置
-├── 📜 akshare_list.py             # AKShare函数列表
-├── 📜 prometheus.yml             # Prometheus配置
-├── 📜 requirements.txt           # 依赖包
-└── 📜 start_agents.sh            # 系统启动脚本
+│   ├── market_*.json                   # 市场数据文件
+│   ├── analysis_*.json                 # 分析结果文件
+│   └── system_status_*.json            # 系统状态文件
+├── 📂 logs/                      # 运行日志
+│   ├── data_agent.log                  # 数据采集日志
+│   ├── technical_agent.log             # 技术分析日志
+│   └── monitor_agent_simple.log        # 系统监控日志
+├── 📜 start_agents.sh            # 系统管理脚本
+├── 📜 dingtalk_sender.py         # 钉钉消息发送器
+├── 📜 system_status_report.md    # 系统状态报告
+└── 📜 readme.md                  # 本文档
 ```
 
 ---
@@ -123,41 +94,23 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                   接入层                                 │
-│  • 钉钉机器人Webhook                                   │
-│  • Web管理界面                                         │
-│  • API接口                                             │
+│                   钉钉控制中心                           │
+│  • 指令接收与分发                                      │
+│  • 消息格式化与推送                                    │
+│  • Agent状态监控                                       │
+│  • 风险控制与熔断                                      │
 └───────────────┬─────────────────────────────────────────┘
                 │
-┌─────────────────────────────────────────────────────────┐
-│                   服务层                                 │
-│  • 消息处理服务                                         │
-│  • API网关服务                                         │
-│  • 认证授权服务                                         │
-│  • 配置管理服务                                         │
-│  • 数据共享服务                                         │
-│  • 错误处理服务                                         │
-└───────────────┬─────────────────────────────────────────┘
-                │
-┌─────────────────────────────────────────────────────────┐
-│                   Agent层                                │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │
-│  │ 数据采集    │  │ 技术分析    │  │ 风险控制    │      │
-│  │ Agent       │  │ Agent       │  │ Agent       │      │
-│  └─────────────┘  └─────────────┘  └─────────────┘      │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │
-│  │ 交易执行    │  │ 系统监控    │  │ 策略优化    │      │
-│  │ Agent       │  │ Agent       │  │ Agent       │      │
-│  └─────────────┘  └─────────────┘  └─────────────┘      │
-└───────────────┬─────────────────────────────────────────┘
-                │
-┌─────────────────────────────────────────────────────────┐
-│                   数据层                                 │
-│  • 实时数据 (Redis)                                     │
-│  • 历史数据 (PostgreSQL)                                │
-│  • 配置数据 (PostgreSQL)                                │
-│  • 日志数据 (Elasticsearch)                             │
-└─────────────────────────────────────────────────────────┘
+    ┌───────────┼───────────┐
+    ▼           ▼           ▼
+┌─────────┐ ┌─────────┐ ┌─────────┐
+│数据采集 │ │技术分析 │ │系统监控 │
+│Agent    │ │Agent    │ │Agent    │
+├─────────┤ ├─────────┤ ├─────────┤
+│• 实时行情│ • 技术指标│ • Agent状态│
+│• 资金流向│ • K线形态│ • 系统资源│
+│• 新闻舆情│ • 买卖信号│ • 健康报告│
+└─────────┘ └─────────┘ └─────────┘
 ```
 
 ### Agent职责
@@ -168,7 +121,7 @@
   - 收集市场热点板块数据
   - 监控资金流向变化
   - 跟踪新闻舆情
-- **输出**: 市场数据 + 钉钉热点推送
+- **输出**: 市场数据JSON文件 + 钉钉热点推送
 
 #### 2. 技术分析Agent (Technical Analyst)
 - **运行频率**: 每15分钟
@@ -176,42 +129,15 @@
   - 多指标技术分析 (MACD/KDJ/RSI/成交量)
   - 买卖信号生成
   - 风险预警
-- **输出**: 分析结果 + 钉钉买卖信号
+- **输出**: 分析结果JSON文件 + 钉钉买卖信号
 
-#### 3. 风险控制Agent (Risk Controller)
-- **运行频率**: 每10分钟
-- **功能**:
-  - 监控市场风险
-  - 监控持仓风险
-  - 执行止损操作
-  - 风险报告生成
-- **输出**: 风险评估 + 止损信号
-
-#### 4. 交易执行Agent (Trade Executor)
-- **运行频率**: 每5分钟
-- **功能**:
-  - 执行买卖操作
-  - 管理交易订单
-  - 处理交易回调
-  - 交易记录存储
-- **输出**: 交易记录 + 订单状态
-
-#### 5. 策略优化Agent (Strategy Optimizer)
-- **运行频率**: 每1小时
-- **功能**:
-  - 基于历史数据优化交易策略
-  - 评估策略性能
-  - 生成策略建议
-  - 策略参数调优
-- **输出**: 策略建议 + 优化结果
-
-#### 6. 系统监控Agent (System Monitor)
+#### 3. 系统监控Agent (System Monitor)
 - **运行频率**: 每30分钟
 - **功能**:
   - 监控各Agent健康状态
   - 检查系统资源使用
   - 发送状态报告
-- **输出**: 状态报告 + 钉钉健康报告
+- **输出**: 状态报告JSON文件 + 钉钉健康报告
 
 ---
 
@@ -286,7 +212,7 @@
 ### 日常操作流程
 
 ```
-08:30-09:15 数据Agent准备开盘数据
+08:30-09:00 数据Agent准备开盘数据
 09:15       钉钉推送开盘热点
 09:30-11:30 技术分析Agent实时扫描 (每15分钟)
             钉钉推送买卖信号 (实时)
@@ -369,9 +295,8 @@
 
 ### 环境要求
 
-- **Python**: 3.9+
-- **Docker**: 20.04+
-- **Docker Compose**: 1.29+
+- **Python**: 3.8+
+- **操作系统**: Linux (Ubuntu/CentOS)
 - **网络**: 稳定的互联网连接
 - **存储**: 至少100MB可用空间
 
@@ -379,9 +304,8 @@
 
 #### 1. 基础环境
 ```bash
-# 克隆项目代码
-git clone <your-git-repository-url>
-cd MultiAgentStockSystem
+# 创建项目目录
+mkdir -p ./{config,agents,data,logs}
 
 # 设置权限
 chmod +x ./start_agents.sh
@@ -396,14 +320,11 @@ chmod +x ./start_agents.sh
 
 #### 3. 系统启动
 ```bash
-# 启动所有服务
-docker-compose up -d
+# 启动系统
+./start_agents.sh start
 
-# 查看服务状态
-docker-compose ps
-
-# 查看日志
-docker-compose logs -f
+# 验证状态
+./start_agents.sh status
 ```
 
 ### 系统管理
@@ -426,7 +347,7 @@ docker-compose logs -f
 ./start_agents.sh status
 
 # 查看实时日志
-docker-compose logs -f
+tail -f ./logs/*.log
 
 # 检查数据文件
 ls -la ./data/
@@ -434,11 +355,12 @@ ls -la ./data/
 
 #### 故障排查
 ```bash
+
 # 检查配置文件
 cat ./config/dingtalk.json
 
-# 检查容器状态
-docker-compose ps
+# 检查进程状态
+ps aux | grep -E "(data_agent|technical_agent|monitor_agent)"
 ```
 
 ---
@@ -451,19 +373,20 @@ docker-compose ps
 - **原因**: 关键词不匹配或签名错误
 - **解决**:
   ```bash
+
   # 检查关键词设置
   # 消息必须包含钉钉机器人设置的关键词
   ```
 
 #### 2. Agent停止运行
-- **原因**: 容器崩溃或资源不足
+- **原因**: 进程崩溃或资源不足
 - **解决**:
   ```bash
   # 查看日志
-  docker-compose logs -f
+  tail -f ./logs/*.log
 
   # 重启系统
-  docker-compose restart
+  ./start_agents.sh restart
   ```
 
 #### 3. 数据不更新
@@ -471,31 +394,31 @@ docker-compose ps
 - **解决**:
   ```bash
   # 检查数据Agent状态
-  docker-compose logs data_agent
+  ps aux | grep data_agent
 
   # 手动测试数据采集
-  docker exec -it stock_data_agent python -m agents.data_agent
+  python ./agents/data_agent.py
   ```
 
 ### 日志分析
 
 #### 数据采集日志
 ```bash
-docker-compose logs data_agent
+tail -f ./logs/data_agent.log
 ```
 - 正常输出: `[时间] 收集市场数据...`
 - 错误输出: `数据采集错误: [错误信息]`
 
 #### 技术分析日志
 ```bash
-docker-compose logs technical_agent
+tail -f ./logs/technical_agent.log
 ```
 - 正常输出: `[时间] 分析股票...`
 - 信号输出: `发现 [数量] 个买入信号`
 
 #### 系统监控日志
 ```bash
-docker-compose logs monitor_agent
+tail -f ./logs/monitor_agent_simple.log
 ```
 - 正常输出: `[时间] 检查系统状态...`
 - 状态输出: `状态报告发送成功/失败`
@@ -525,13 +448,65 @@ docker-compose logs monitor_agent
 
 ---
 
+## 🔮 扩展计划
+
+### 短期扩展 (1-2周)
+1. **真实数据源集成**
+   - 接入akshare获取实时行情
+   - 添加更多数据源 (新浪财经、东方财富)
+   - 实现历史数据回测
+
+2. **技术指标增强**
+   - 添加布林带、均线系统
+   - 实现多周期分析
+   - 优化买卖信号算法
+
+3. **用户体验优化**
+   - 添加Web控制面板
+   - 实现数据可视化
+   - 优化钉钉消息模板
+
+### 中期扩展 (1-2月)
+1. **多市场支持**
+   - 港股市场分析
+   - 美股市场分析
+   - 加密货币市场
+
+2. **智能算法**
+   - 机器学习预测模型
+   - 自然语言处理新闻分析
+   - 强化学习策略优化
+
+3. **自动化交易**
+   - 实盘交易接口
+   - 风险控制自动化
+   - 绩效分析系统
+
+### 长期愿景 (3-6月)
+1. **云端部署**
+   - 高可用架构
+   - 负载均衡
+   - 自动扩缩容
+
+2. **多用户支持**
+   - 用户管理系统
+   - 权限控制
+   - 个性化配置
+
+3. **生态建设**
+   - 策略市场
+   - 社区交流
+   - 教育培训
+
+---
+
 ## 📚 技术文档
 
 ### API参考
 
 #### 钉钉消息发送器
 ```python
-from dingtalk import DingTalkSender
+from dingtalk_sender import DingTalkSender
 
 # 初始化
 sender = DingTalkSender(config_file="/path/to/config.json")
@@ -556,14 +531,25 @@ sender.send_stock_alert(
 )
 ```
 
-#### API接口
-- **健康检查**: `GET /api/v1/system/health`
-- **系统状态**: `GET /api/v1/system/status`
-- **市场数据**: `GET /api/v1/data/market`
-- **技术分析**: `GET /api/v1/data/analysis`
-- **交易记录**: `GET /api/v1/data/trades`
-- **策略列表**: `GET /api/v1/strategies`
-- **下单**: `POST /api/v1/trades/order`
+#### 数据采集Agent
+```python
+# 运行数据采集Agent
+python ./agents/data_agent.py
+
+# 参数配置
+# 修改 ./agents/data_agent.py 中的运行参数
+# interval: 采集间隔（秒）
+# sources: 数据源列表
+```
+
+#### 技术分析Agent
+```python
+# 运行技术分析Agent
+python ./agents/technical_agent.py
+
+# 监控股票列表
+# 修改 ./agents/technical_agent.py 中的 watch_list
+```
 
 ### 开发指南
 
@@ -571,7 +557,7 @@ sender.send_stock_alert(
 1. 在`agents/`目录创建新Agent文件
 2. 实现Agent核心逻辑
 3. 集成钉钉消息发送
-4. 更新Docker Compose配置
+4. 更新启动脚本
 5. 测试验证
 
 #### 扩展数据源
@@ -591,7 +577,7 @@ sender.send_stock_alert(
 ## 👥 贡献指南
 
 ### 代码规范
-- 使用Python 3.9+语法
+- 使用Python 3.8+语法
 - 遵循PEP 8编码规范
 - 添加必要的注释和文档
 - 编写单元测试
@@ -634,11 +620,9 @@ sender.send_stock_alert(
 - **邮件**: 联系项目维护者
 
 ### 文档资源
-- [系统架构设计](docs/ARCH.md)
-- [完整解决方案](docs/SOLUTION.md)
-- [测试计划](docs/TEST.md)
-- [用户指南](docs/GUIDE.md)
-- [用户手册](docs/MANUAL.md)
+- [系统架构设计](agents/dingtalk_integration.md)
+- [系统状态报告](system_status_report.md)
+- [钉钉集成指南](config/readme.md)
 
 ### 更新日志
 - **v1.0** (2026-03-08): 初始版本发布
@@ -647,22 +631,8 @@ sender.send_stock_alert(
   - 超短线策略
   - 风险控制系统
 
-- **v1.1.0** (2026-03-10): 系统优化与功能增强
-  - 优化数据同步机制：实现自动保存、数据过期检查、数据变更订阅
-  - 优化配置管理：实现统一配置管理、实时配置更新、配置变更通知
-  - 优化错误处理：实现统一错误处理、错误重试机制、错误统计分析
-  - 增强系统可靠性：提高容错能力，支持自动降级
-  - 改进Agent协作：各Agent之间更好的数据共享和通信
-- **v1.0.5** (2026-03-10): 文件名称优化，系统逻辑梳理
-- **v1.0.2** (2026-03-10): 功能增强
-  - 新增风险控制Agent
-  - 新增交易执行Agent
-  - 新增策略优化Agent
-  - 新增API接口
-  - 新增Docker部署支持
-
 ---
 
-**最后更新**: 2026-03-10
-**版本**: v1.1.0
+**最后更新**: 2026-03-08
+**版本**: v1.0
 **状态**: ✅ 生产就绪

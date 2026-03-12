@@ -76,8 +76,7 @@ class DataShare:
             try:
                 # 验证键名
                 if not isinstance(key, str) or not key:
-                    print("数据键必须是非空字符串")
-                    return
+                    raise ValueError("数据键必须是非空字符串")
                 
                 old_value = self.data.get(key)
                 self.data[key] = value
@@ -93,6 +92,7 @@ class DataShare:
                             print(f"回调函数执行失败: {e}")
             except Exception as e:
                 print(f"设置数据失败: {e}")
+                raise
     
     def get(self, key: str, default: Any = None, max_age: Optional[int] = None) -> Any:
         """
