@@ -35,6 +35,16 @@ except ImportError:
     HAS_BAOSTOCK = False
     print("[DataAgent] BaoStock不可用")
 
+# 尝试导入akshare
+try:
+    import akshare as ak
+    import pandas as pd
+    HAS_AKSHARE = True
+    print("[DataAgent] AkShare可用，将使用真实数据源")
+except ImportError:
+    HAS_AKSHARE = False
+    print("[DataAgent] AkShare不可用")
+
 # 数据源配置
 DATA_SOURCES = {
     'tushare': {
@@ -48,20 +58,15 @@ DATA_SOURCES = {
 }
 
 class DataCollectorAgent:
-    def __init__(self, use_real_data=True, primary_source='tushare'):
+    def __init__(self, primary_source='tushare'):
         self.sender = DingTalkSender()
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.data_dir = os.path.join(project_root, "data")
         os.makedirs(self.data_dir, exist_ok=True)
         # 从配置获取设置
-        has_available_source = HAS_TUSHARE or HAS_BAOSTOCK
-        self.use_real_data = use_real_data and has_available_source
         self.primary_source = primary_source if DATA_SOURCES.get(primary_source, {}).get('available', False) else 'tushare'
         self.check_interval = config_manager.get("data_collector", "check_interval", 300)
-        if self.use_real_data:
-            print(f"[DataAgent] 配置为使用真实市场数据，主数据源: {DATA_SOURCES[self.primary_source]['name']}")
-        else:
-            print("[DataAgent] 配置为使用模拟数据")
+        print(f"[DataAgent] 配置为使用真实市场数据，主数据源: {DATA_SOURCES[self.primary_source]['name']}")
         
         # 初始化数据源状态
         self.data_source_status = {}
@@ -76,12 +81,6 @@ class DataCollectorAgent:
         """收集市场数据（优先使用主数据源，失败时自动切换）"""
         current_time = datetime.now().strftime("%H:%M:%S")
 
-        # 如果不使用真实数据或所有数据源不可用，则返回模拟数据
-        if not self.use_real_data:
-            data = self._get_mock_data(current_time)
-            data_share.set_market_data(data)
-            return data
-
         # 尝试从主数据源获取数据
         data = self._get_data_from_source(self.primary_source, current_time)
         
@@ -94,14 +93,9 @@ class DataCollectorAgent:
                     if data:
                         break
         
-        # 如果所有数据源都失败，使用模拟数据
-        if not data:
-            print("所有数据源失败，使用模拟数据")
-            data = self._get_mock_data(current_time)
-        
         # 验证数据完整性
         if data and isinstance(data, dict):
-            if 'hot_sectors' not in data:
+            if 'hot_sectors' not in data or data['hot_sectors'] is None:
                 data['hot_sectors'] = []
             if 'capital_flow' not in data:
                 data['capital_flow'] = {}
@@ -110,24 +104,32 @@ class DataCollectorAgent:
             data_share.set_market_data(data)
             return data
         else:
-            # 如果数据无效，使用模拟数据
-            print("数据无效，使用模拟数据")
-            data = self._get_mock_data(current_time)
+            # 如果数据无效，返回空数据
+            print("数据无效，返回空数据")
+            data = {
+                "timestamp": current_time,
+                "hot_sectors": [],
+                "capital_flow": {
+                    "northbound_in": 0.0,
+                    "main_net_in": 0.0,
+                    "retail_net_in": 0.0
+                },
+                "data_source": self.primary_source
+            }
             data_share.set_market_data(data)
             return data
     
     def _get_data_from_source(self, source, current_time):
         """从指定数据源获取数据"""
         def fallback():
-            print(f"数据源 {DATA_SOURCES[source]['name']} 失败，回退到模拟数据")
+            print(f"数据源 {DATA_SOURCES[source]['name']} 失败")
             self.data_source_status[source]['failures'] += 1
             return None
         
         try:
             if source == 'tushare' or source == 'baostock':
-                # 对于Tushare和BaoStock，我们使用模拟数据，因为它们主要用于获取股票价格
-                # 这里我们返回模拟的市场数据
-                data = self._get_mock_data(current_time)
+                # 使用真实市场数据
+                data = self._get_real_market_data(current_time)
             else:
                 return None
             
@@ -155,37 +157,17 @@ class DataCollectorAgent:
             "capital_flow": capital_flow
         }
 
-    def _get_mock_data(self, current_time):
-        """返回模拟数据（降级用）"""
-        hot_sectors = [
-            {"name": "消费电子", "change": 1.5, "leader": "002475 立讯精密"}
-        ]
 
-        capital_flow = {
-            "northbound_in": 1.2,  # 北向资金流入（亿）
-            "main_net_in": 3.5,    # 主力资金净流入（亿）
-            "retail_net_in": -0.8  # 散户资金净流入（亿）
-        }
-
-        return {
-            "timestamp": current_time,
-            "hot_sectors": hot_sectors,
-            "capital_flow": capital_flow
-        }
 
     def _get_hot_sectors(self):
         """使用akshare获取热点板块（涨幅前5）"""
-        def fallback():
-            # 返回模拟板块
-            return self._get_mock_data(datetime.now().strftime("%H:%M:%S"))["hot_sectors"]
-
-        return error_handler.try_execute_with_fallback(
-            self._get_real_hot_sectors,
-            fallback
-        )
+        return error_handler.try_execute(self._get_real_hot_sectors)
     
     def _get_real_hot_sectors(self):
         """获取真实热点板块数据"""
+        if not HAS_AKSHARE:
+            raise ImportError("AkShare不可用，无法获取热点板块数据")
+            
         sector_df = ak.stock_sector_spot()
         if sector_df.empty:
             raise ValueError("板块数据为空")
@@ -227,14 +209,7 @@ class DataCollectorAgent:
 
     def _get_capital_flow(self):
         """使用akshare获取资金流向数据"""
-        def fallback():
-            # 返回模拟资金流向
-            return self._get_mock_data(datetime.now().strftime("%H:%M:%S"))["capital_flow"]
-
-        return error_handler.try_execute_with_fallback(
-            self._get_real_capital_flow,
-            fallback
-        )
+        return error_handler.try_execute(self._get_real_capital_flow)
     
     def _get_real_capital_flow(self):
         """获取真实资金流向数据"""
@@ -243,6 +218,9 @@ class DataCollectorAgent:
             "main_net_in": 0.0,
             "retail_net_in": 0.0
         }
+
+        if not HAS_AKSHARE:
+            return capital_flow
 
         # 1. 北向资金 (沪深港通)
         def get_northbound_flow():

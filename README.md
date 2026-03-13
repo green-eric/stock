@@ -65,27 +65,43 @@
 
 ```
 ./
-├── 📂 config/                    # 配置文件
-│   ├── dingtalk.json                   # 钉钉集成配置
-│   ├── dingtalk_example.json           # 钉钉配置示例
-│   └── dingtalk_connection_success.json # 连接成功记录
 ├── 📂 agents/                    # Agent核心代码
 │   ├── data_agent.py                   # 数据采集Agent
+│   ├── monitor_agent.py                 # 系统监控Agent
+│   ├── risk_agent.py                    # 风险控制Agent
+│   ├── strategy_agent.py                # 策略优化Agent
 │   ├── technical_agent.py              # 技术分析Agent
-│   ├── monitor_agent_simple.py         # 系统监控Agent
-│   └── dingtalk_integration.md         # 钉钉集成架构设计
+│   └── trade_agent.py                   # 交易执行Agent
+├── 📂 api/                        # API接口
+│   └── main.py                          # API主文件
+├── 📂 config/                    # 配置文件
+│   ├── config_manager.py                # 配置管理器
+│   ├── data_collector.json              # 数据采集配置
+│   ├── monitor.json                     # 监控配置
+│   ├── monitor_config.json              # 监控配置
+│   ├── risk_controller.json             # 风险控制配置
+│   ├── strategy_analyzer.json           # 策略分析配置
+│   ├── system.json                      # 系统配置
+│   └── watch_list.txt                   # 监控股票列表
 ├── 📂 data/                      # 数据存储
-│   ├── market_*.json                   # 市场数据文件
-│   ├── analysis_*.json                 # 分析结果文件
-│   └── system_status_*.json            # 系统状态文件
-├── 📂 logs/                      # 运行日志
-│   ├── data_agent.log                  # 数据采集日志
-│   ├── technical_agent.log             # 技术分析日志
-│   └── monitor_agent_simple.log        # 系统监控日志
-├── 📜 start_agents.sh            # 系统管理脚本
-├── 📜 dingtalk_sender.py         # 钉钉消息发送器
-├── 📜 system_status_report.md    # 系统状态报告
-└── 📜 readme.md                  # 本文档
+│   ├── data_share.py                    # 数据共享
+│   └── storage.py                       # 数据存储
+├── 📂 tests/                     # 测试文件
+│   ├── test_agents.py                   # 代理测试
+│   └── test_storage.py                  # 存储测试
+├── 📂 utils/                     # 工具函数
+│   └── error_handler.py                 # 错误处理
+├── 📜 .gitignore                  # Git忽略文件
+├── 📜 Dockerfile.agent            # Docker配置
+├── 📜 Dockerfile.api              # Docker配置
+├── 📜 README.md                   # 本文档
+├── 📜 dingtalk.py                 # 钉钉消息发送器
+├── 📜 docker-compose.yml          # Docker Compose配置
+├── 📜 prometheus.yml              # Prometheus配置
+├── 📜 requirements.txt            # 依赖包
+├── 📜 start_agents.sh             # 系统管理脚本
+├── 📜 test_agents.py              # 代理测试
+└── 📜 test_storage.py             # 存储测试
 ```
 
 ---
@@ -131,7 +147,7 @@
   - 多指标技术分析 (MACD/KDJ/RSI/成交量/RPS)
   - 多数据源支持 (Tushare、BaoStock)
   - 智能数据源切换机制
-  - 买卖信号生成
+  - 买卖信号生成（最多发送3个买入信号）
   - 风险预警
 - **输出**: 分析结果JSON文件 + 钉钉买卖信号
 

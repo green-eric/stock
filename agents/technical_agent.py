@@ -493,9 +493,27 @@ class TechnicalAnalysisAgent:
         }
         data_share.set_analysis_results(analysis_data)
 
+        # 存储分析结果到DataStorage
+        try:
+            from data.storage import DataStorage
+            storage = DataStorage()
+            for result in results:
+                analysis_record = {
+                    "timestamp": datetime.now().isoformat(),
+                    "symbol": result["code"],
+                    "name": result["name"],
+                    "indicators": result["indicators"],
+                    "score": result["score"],
+                    "signal": result["signal"]
+                }
+                storage.save_technical_analysis(analysis_record)
+            storage.close()
+        except Exception as e:
+            print(f"存储分析结果到DataStorage失败: {e}")
+
         # 如果有买入信号，发送详细分析
         if buy_signals:
-            for signal in buy_signals[:2]:  # 最多发送2个买入信号
+            for signal in buy_signals[:3]:  # 最多发送3个买入信号
                 content = f"""
 🚨 买入信号: {signal['code']} {signal['name']}
 

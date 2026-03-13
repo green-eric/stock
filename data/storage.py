@@ -334,6 +334,22 @@ class DataStorage:
             print(f"获取技术分析结果失败: {e}")
             return []
     
+    def get_all_technical_analysis(self, limit=10):
+        """获取所有股票的技术分析结果"""
+        try:
+            if self.postgres_cursor:
+                self.postgres_cursor.execute('''
+                    SELECT * FROM technical_analysis 
+                    ORDER BY timestamp DESC 
+                    LIMIT %s
+                ''', (limit,))
+                rows = self.postgres_cursor.fetchall()
+                return [dict(row) for row in rows]
+            return []
+        except Exception as e:
+            print(f"获取所有技术分析结果失败: {e}")
+            return []
+    
     def get_trades(self, symbol=None, limit=100):
         """获取交易记录"""
         try:

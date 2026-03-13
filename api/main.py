@@ -41,7 +41,7 @@ app.add_middleware(
 
 # 初始化组件
 storage = DataStorage()
-data_agent = DataCollectorAgent()
+data_agent = DataCollectorAgent(primary_source='tushare')
 technical_agent = TechnicalAnalysisAgent()
 risk_agent = RiskControllerAgent()
 trade_agent = TradeExecutorAgent()
@@ -123,26 +123,9 @@ async def get_market_data(symbol: str = None):
         else:
             raise HTTPException(status_code=404, detail="Market data not found")
     else:
-        # 模拟返回多个股票的市场数据
-        return {
-            "timestamp": datetime.now().isoformat(),
-            "data": [
-                {
-                    "symbol": "002594",
-                    "name": "比亚迪",
-                    "price": 225.0,
-                    "change": 5.5,
-                    "change_percent": 2.5
-                },
-                {
-                    "symbol": "300750",
-                    "name": "宁德时代",
-                    "price": 230.0,
-                    "change": 3.2,
-                    "change_percent": 1.4
-                }
-            ]
-        }
+        # 使用数据采集模块获取市场数据，与钉钉显示格式保持一致
+        data = data_agent.collect_market_data()
+        return data
 
 @app.get("/api/v1/data/analysis")
 async def get_technical_analysis(symbol: str = None, limit: int = 10):
@@ -155,7 +138,41 @@ async def get_technical_analysis(symbol: str = None, limit: int = 10):
             "analysis": analysis
         }
     else:
-        raise HTTPException(status_code=400, detail="Symbol is required")
+        # 当没有提供symbol时，返回所有股票的技术分析结果，与钉钉消息格式一致
+        results = []
+        buy_signals = []
+        
+        for stock in technical_agent.watch_list:
+            result = technical_agent.analyze_stock(stock)
+            results.append(result)
+            
+            if result["signal"] == "买入" and result["score"] >= 7.5:
+                buy_signals.append(result)
+        
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "results": results,
+            "buy_signals": buy_signals
+        }
+
+@app.get("/api/v1/data/analysis/all")
+async def get_all_technical_analysis(limit: int = 10):
+    """获取所有股票的技术分析结果"""
+    results = []
+    buy_signals = []
+    
+    for stock in technical_agent.watch_list:
+        result = technical_agent.analyze_stock(stock)
+        results.append(result)
+        
+        if result["signal"] == "买入" and result["score"] >= 7.5:
+            buy_signals.append(result)
+    
+    return {
+        "timestamp": datetime.now().isoformat(),
+        "results": results,
+        "buy_signals": buy_signals
+    }
 
 @app.get("/api/v1/data/trades")
 async def get_trades(symbol: str = None, limit: int = 100):
@@ -307,4 +324,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)
