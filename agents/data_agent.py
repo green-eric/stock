@@ -26,41 +26,72 @@ except ImportError:
     AKSHARE_AVAILABLE = False
     print("[DataAgent] akshare不可用，将使用模拟数据")
 
+# 数据源配置
+DATA_SOURCES = {
+    'akshare': {
+        'name': 'AKShare',
+        'available': AKSHARE_AVAILABLE
+    },
+    'sina': {
+        'name': '新浪财经',
+        'available': True  # 基于akshare的新浪接口
+    },
+    'eastmoney': {
+        'name': '东方财富',
+        'available': True  # 基于akshare的东方财富接口
+    }
+}
+
 class DataCollectorAgent:
-    def __init__(self, use_real_data=True):
+    def __init__(self, use_real_data=True, primary_source='akshare'):
         self.sender = DingTalkSender()
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.data_dir = os.path.join(project_root, "data")
         os.makedirs(self.data_dir, exist_ok=True)
         # 从配置获取设置
         self.use_real_data = use_real_data and AKSHARE_AVAILABLE
+        self.primary_source = primary_source if DATA_SOURCES.get(primary_source, {}).get('available', False) else 'akshare'
         self.check_interval = config_manager.get("data_collector", "check_interval", 300)
         if self.use_real_data:
-            print("[DataAgent] 配置为使用真实市场数据")
+            print(f"[DataAgent] 配置为使用真实市场数据，主数据源: {DATA_SOURCES[self.primary_source]['name']}")
         else:
             print("[DataAgent] 配置为使用模拟数据")
+        
+        # 初始化数据源状态
+        self.data_source_status = {}
+        for source, info in DATA_SOURCES.items():
+            self.data_source_status[source] = {
+                'available': info['available'],
+                'last_used': None,
+                'failures': 0
+            }
 
     def collect_market_data(self):
-        """收集市场数据（优先使用akshare真实数据）"""
+        """收集市场数据（优先使用主数据源，失败时自动切换）"""
         current_time = datetime.now().strftime("%H:%M:%S")
 
-        # 如果不使用真实数据或akshare不可用，则返回模拟数据
+        # 如果不使用真实数据或所有数据源不可用，则返回模拟数据
         if not self.use_real_data:
             data = self._get_mock_data(current_time)
             data_share.set_market_data(data)
             return data
 
-        def fallback():
-            print("回退到模拟数据")
+        # 尝试从主数据源获取数据
+        data = self._get_data_from_source(self.primary_source, current_time)
+        
+        # 如果主数据源失败，尝试其他数据源
+        if not data:
+            for source in ['sina', 'eastmoney', 'akshare']:
+                if source != self.primary_source and self.data_source_status.get(source, {}).get('available', False):
+                    print(f"尝试从备用数据源 {DATA_SOURCES[source]['name']} 获取数据")
+                    data = self._get_data_from_source(source, current_time)
+                    if data:
+                        break
+        
+        # 如果所有数据源都失败，使用模拟数据
+        if not data:
+            print("所有数据源失败，使用模拟数据")
             data = self._get_mock_data(current_time)
-            data_share.set_market_data(data)
-            return data
-
-        data = error_handler.try_execute_with_fallback(
-            self._get_real_market_data,
-            fallback,
-            current_time
-        )
         
         # 验证数据完整性
         if data and isinstance(data, dict):
@@ -68,6 +99,8 @@ class DataCollectorAgent:
                 data['hot_sectors'] = []
             if 'capital_flow' not in data:
                 data['capital_flow'] = {}
+            if 'data_source' not in data:
+                data['data_source'] = self.primary_source
             data_share.set_market_data(data)
             return data
         else:
@@ -76,6 +109,45 @@ class DataCollectorAgent:
             data = self._get_mock_data(current_time)
             data_share.set_market_data(data)
             return data
+    
+    def _get_data_from_source(self, source, current_time):
+        """从指定数据源获取数据"""
+        def fallback():
+            print(f"数据源 {DATA_SOURCES[source]['name']} 失败，回退到模拟数据")
+            self.data_source_status[source]['failures'] += 1
+            return None
+        
+        try:
+            if source == 'akshare':
+                data = error_handler.try_execute_with_fallback(
+                    self._get_real_market_data,
+                    fallback,
+                    current_time
+                )
+            elif source == 'sina':
+                data = error_handler.try_execute_with_fallback(
+                    self._get_sina_market_data,
+                    fallback,
+                    current_time
+                )
+            elif source == 'eastmoney':
+                data = error_handler.try_execute_with_fallback(
+                    self._get_eastmoney_market_data,
+                    fallback,
+                    current_time
+                )
+            else:
+                return None
+            
+            if data:
+                data['data_source'] = source
+                self.data_source_status[source]['last_used'] = datetime.now()
+                self.data_source_status[source]['failures'] = 0
+            return data
+        except Exception as e:
+            print(f"数据源 {DATA_SOURCES[source]['name']} 出错: {e}")
+            self.data_source_status[source]['failures'] += 1
+            return None
     
     def _get_real_market_data(self, current_time):
         """获取真实市场数据"""
@@ -222,6 +294,158 @@ class DataCollectorAgent:
         get_market_flow()
 
         return capital_flow
+    
+    def _get_sina_market_data(self, current_time):
+        """从新浪财经获取市场数据"""
+        try:
+            print("[DataAgent] 从新浪财经获取数据")
+            
+            # 1. 获取新浪财经板块数据
+            sector_df = ak.stock_sector_spot()  # 新浪财经数据也可以通过akshare获取
+            hot_sectors = []
+            
+            if not sector_df.empty:
+                # 确保有涨跌幅列
+                if '涨跌幅' not in sector_df.columns:
+                    if '涨幅' in sector_df.columns:
+                        change_col = '涨幅'
+                    else:
+                        change_col = sector_df.columns[5]
+                else:
+                    change_col = '涨跌幅'
+
+                # 转换为数值，处理百分号
+                sector_df[change_col] = sector_df[change_col].astype(str).str.replace('%', '').astype(float)
+
+                # 按涨跌幅降序排序，取前5
+                top_sectors = sector_df.nlargest(5, change_col)
+
+                for _, row in top_sectors.iterrows():
+                    sector_name = row['板块'] if '板块' in row else row.iloc[1]
+                    change = round(float(row[change_col]), 2)
+                    leader_code = row['股票代码'] if '股票代码' in row else ''
+                    leader_name = row['股票名称'] if '股票名称' in row else ''
+                    leader = f"{leader_code} {leader_name}".strip()
+                    if not leader:
+                        leader = "未知"
+
+                    hot_sectors.append({
+                        "name": sector_name,
+                        "change": change,
+                        "leader": leader
+                    })
+            
+            # 2. 获取资金流向（使用新浪财经数据）
+            capital_flow = {
+                "northbound_in": 0.0,
+                "main_net_in": 0.0,
+                "retail_net_in": 0.0
+            }
+            
+            # 尝试获取新浪财经资金流向数据
+            try:
+                # 使用akshare的新浪财经接口
+                market_flow = ak.stock_market_fund_flow()
+                if not market_flow.empty:
+                    latest = market_flow.iloc[-1]
+                    main_net = latest['主力净流入-净额']
+                    if pd.notna(main_net):
+                        capital_flow['main_net_in'] = round(float(main_net) / 100000000, 2)
+                    retail_net = latest['小单净流入-净额']
+                    if pd.notna(retail_net):
+                        capital_flow['retail_net_in'] = round(float(retail_net) / 100000000, 2)
+            except Exception as e:
+                print(f"[DataAgent] 新浪财经资金流向获取失败: {e}")
+            
+            return {
+                "timestamp": current_time,
+                "hot_sectors": hot_sectors,
+                "capital_flow": capital_flow,
+                "data_source": "sina"
+            }
+        except Exception as e:
+            print(f"[DataAgent] 新浪财经数据获取失败: {e}")
+            return None
+    
+    def _get_eastmoney_market_data(self, current_time):
+        """从东方财富获取市场数据"""
+        try:
+            print("[DataAgent] 从东方财富获取数据")
+            
+            # 1. 获取东方财富板块数据
+            sector_df = ak.stock_sector_spot()  # 东方财富数据也可以通过akshare获取
+            hot_sectors = []
+            
+            if not sector_df.empty:
+                # 确保有涨跌幅列
+                if '涨跌幅' not in sector_df.columns:
+                    if '涨幅' in sector_df.columns:
+                        change_col = '涨幅'
+                    else:
+                        change_col = sector_df.columns[5]
+                else:
+                    change_col = '涨跌幅'
+
+                # 转换为数值，处理百分号
+                sector_df[change_col] = sector_df[change_col].astype(str).str.replace('%', '').astype(float)
+
+                # 按涨跌幅降序排序，取前5
+                top_sectors = sector_df.nlargest(5, change_col)
+
+                for _, row in top_sectors.iterrows():
+                    sector_name = row['板块'] if '板块' in row else row.iloc[1]
+                    change = round(float(row[change_col]), 2)
+                    leader_code = row['股票代码'] if '股票代码' in row else ''
+                    leader_name = row['股票名称'] if '股票名称' in row else ''
+                    leader = f"{leader_code} {leader_name}".strip()
+                    if not leader:
+                        leader = "未知"
+
+                    hot_sectors.append({
+                        "name": sector_name,
+                        "change": change,
+                        "leader": leader
+                    })
+            
+            # 2. 获取资金流向（使用东方财富数据）
+            capital_flow = {
+                "northbound_in": 0.0,
+                "main_net_in": 0.0,
+                "retail_net_in": 0.0
+            }
+            
+            # 尝试获取东方财富资金流向数据
+            try:
+                # 使用akshare的东方财富接口
+                hsgt_summary = ak.stock_hsgt_fund_flow_summary_em()
+                if not hsgt_summary.empty:
+                    northbound = hsgt_summary[hsgt_summary['资金方向'] == '北向']
+                    if not northbound.empty:
+                        net_buy = northbound.iloc[-1]['成交净买额']
+                        if pd.notna(net_buy):
+                            capital_flow['northbound_in'] = round(float(net_buy) / 100000000, 2)
+                
+                market_flow = ak.stock_market_fund_flow()
+                if not market_flow.empty:
+                    latest = market_flow.iloc[-1]
+                    main_net = latest['主力净流入-净额']
+                    if pd.notna(main_net):
+                        capital_flow['main_net_in'] = round(float(main_net) / 100000000, 2)
+                    retail_net = latest['小单净流入-净额']
+                    if pd.notna(retail_net):
+                        capital_flow['retail_net_in'] = round(float(retail_net) / 100000000, 2)
+            except Exception as e:
+                print(f"[DataAgent] 东方财富资金流向获取失败: {e}")
+            
+            return {
+                "timestamp": current_time,
+                "hot_sectors": hot_sectors,
+                "capital_flow": capital_flow,
+                "data_source": "eastmoney"
+            }
+        except Exception as e:
+            print(f"[DataAgent] 东方财富数据获取失败: {e}")
+            return None
 
     def send_market_summary(self):
         """发送市场总结到钉钉"""
@@ -229,9 +453,11 @@ class DataCollectorAgent:
             data = self.collect_market_data()
 
             # 构造消息内容
+            data_source_name = DATA_SOURCES.get(data.get('data_source', 'akshare'), {}).get('name', '未知')
             content = f"""
 📊 市场数据更新
 ⏰ 时间: {data['timestamp']}
+📡 数据源: {data_source_name}
 
 🔥 热点板块:
 """
