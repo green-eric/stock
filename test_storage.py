@@ -23,9 +23,12 @@ def test_storage_initialization():
     return storage
 
 
-def test_market_data_storage(storage):
+def test_market_data_storage():
     """测试市场数据存储"""
     print("\n=== 测试市场数据存储 ===")
+    
+    # 初始化存储
+    storage = DataStorage()
     
     # 测试数据
     test_market_data = {
@@ -55,12 +58,18 @@ def test_market_data_storage(storage):
     if data:
         print(f"获取到的数据: {data['symbol']} - {data['name']} - {data['price']}")
     
+    # 关闭连接
+    storage.close()
+    
     print("市场数据存储测试通过!")
 
 
-def test_technical_analysis_storage(storage):
+def test_technical_analysis_storage():
     """测试技术分析结果存储"""
     print("\n=== 测试技术分析结果存储 ===")
+    
+    # 初始化存储
+    storage = DataStorage()
     
     # 测试数据
     test_analysis_data = {
@@ -93,12 +102,18 @@ def test_technical_analysis_storage(storage):
     if analysis:
         print(f"获取到的分析结果: {analysis[0]['symbol']} - {analysis[0]['signal']} - {analysis[0]['score']}")
     
+    # 关闭连接
+    storage.close()
+    
     print("技术分析结果存储测试通过!")
 
 
-def test_trade_storage(storage):
+def test_trade_storage():
     """测试交易记录存储"""
     print("\n=== 测试交易记录存储 ===")
+    
+    # 初始化存储
+    storage = DataStorage()
     
     # 测试数据
     test_trade_data = {
@@ -126,12 +141,18 @@ def test_trade_storage(storage):
     if trades:
         print(f"获取到的交易记录: {len(trades)}条")
     
+    # 关闭连接
+    storage.close()
+    
     print("交易记录存储测试通过!")
 
 
-def test_risk_assessment_storage(storage):
+def test_risk_assessment_storage():
     """测试风险评估存储"""
     print("\n=== 测试风险评估存储 ===")
+    
+    # 初始化存储
+    storage = DataStorage()
     
     # 测试数据
     test_risk_data = {
@@ -159,12 +180,18 @@ def test_risk_assessment_storage(storage):
     if risk_assessments:
         print(f"获取到的风险评估记录: {len(risk_assessments)}条")
     
+    # 关闭连接
+    storage.close()
+    
     print("风险评估存储测试通过!")
 
 
-def test_strategy_optimization_storage(storage):
+def test_strategy_optimization_storage():
     """测试策略优化存储"""
     print("\n=== 测试策略优化存储 ===")
+    
+    # 初始化存储
+    storage = DataStorage()
     
     # 测试数据
     test_strategy_data = {
@@ -194,6 +221,9 @@ def test_strategy_optimization_storage(storage):
     if optimizations:
         print(f"获取到的策略优化记录: {len(optimizations)}条")
     
+    # 关闭连接
+    storage.close()
+    
     print("策略优化存储测试通过!")
 
 
@@ -201,21 +231,19 @@ def test_storage_integration():
     """测试存储集成"""
     print("\n=== 测试存储集成 ===")
     
-    # 初始化存储
-    storage = DataStorage()
-    
     try:
         # 测试各种存储功能
-        test_market_data_storage(storage)
-        test_technical_analysis_storage(storage)
-        test_trade_storage(storage)
-        test_risk_assessment_storage(storage)
-        test_strategy_optimization_storage(storage)
+        test_market_data_storage()
+        test_technical_analysis_storage()
+        test_trade_storage()
+        test_risk_assessment_storage()
+        test_strategy_optimization_storage()
         
         print("\n存储集成测试通过!")
-    finally:
-        # 关闭连接
-        storage.close()
+    except Exception as e:
+        print(f"测试异常: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":

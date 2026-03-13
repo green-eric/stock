@@ -198,6 +198,41 @@ class TechnicalAnalysisAgent:
             elif k_value < 20 or d_value < 20 or j_value < 20:
                 kdj_signal = "超卖"
 
+            # 计算RPS（相对强度）指标（简化版）
+            # 这里使用股票自身的历史表现作为参考
+            # 计算20日涨幅
+            if len(df) >= 20:
+                price_20d_ago = df['收盘'].iloc[-20]
+                current_price = df['收盘'].iloc[-1]
+                rps_20d = (current_price - price_20d_ago) / price_20d_ago * 100
+            else:
+                rps_20d = 0
+
+            # 计算60日涨幅
+            if len(df) >= 60:
+                price_60d_ago = df['收盘'].iloc[-60]
+                current_price = df['收盘'].iloc[-1]
+                rps_60d = (current_price - price_60d_ago) / price_60d_ago * 100
+            else:
+                rps_60d = 0
+
+            # 计算120日涨幅
+            if len(df) >= 120:
+                price_120d_ago = df['收盘'].iloc[-120]
+                current_price = df['收盘'].iloc[-1]
+                rps_120d = (current_price - price_120d_ago) / price_120d_ago * 100
+            else:
+                rps_120d = 0
+
+            # RPS评级
+            rps_score = (rps_20d * 0.5 + rps_60d * 0.3 + rps_120d * 0.2) / 3
+            if rps_score > 15:
+                rps_status = "强势"
+            elif rps_score > 5:
+                rps_status = "中性"
+            else:
+                rps_status = "弱势"
+
             # 获取最新价格和涨跌幅
             current_price = float(df['收盘'].iloc[-1])
             prev_close = float(df['收盘'].iloc[-2]) if len(df) >= 2 else current_price
@@ -213,7 +248,12 @@ class TechnicalAnalysisAgent:
                 "kdj": kdj_signal,
                 "ma5": float(df['MA5'].iloc[-1]) if not pd.isna(df['MA5'].iloc[-1]) else current_price,
                 "ma10": float(df['MA10'].iloc[-1]) if not pd.isna(df['MA10'].iloc[-1]) else current_price,
-                "ma20": float(df['MA20'].iloc[-1]) if not pd.isna(df['MA20'].iloc[-1]) else current_price
+                "ma20": float(df['MA20'].iloc[-1]) if not pd.isna(df['MA20'].iloc[-1]) else current_price,
+                "rps": round(rps_score, 1),
+                "rps_status": rps_status,
+                "rps_20d": round(rps_20d, 1),
+                "rps_60d": round(rps_60d, 1),
+                "rps_120d": round(rps_120d, 1)
             }
         except Exception as e:
             print(f"获取真实数据失败 {code}: {e}")
@@ -242,6 +282,18 @@ class TechnicalAnalysisAgent:
                 rsi_status = "超卖"
             ma5 = ma10 = ma20 = current_price
             
+            # 模拟RPS指标
+            rps_20d = random.uniform(-10, 30)
+            rps_60d = random.uniform(-20, 40)
+            rps_120d = random.uniform(-30, 50)
+            rps_score = (rps_20d * 0.5 + rps_60d * 0.3 + rps_120d * 0.2) / 3
+            if rps_score > 15:
+                rps_status = "强势"
+            elif rps_score > 5:
+                rps_status = "中性"
+            else:
+                rps_status = "弱势"
+            
             # 计算综合评分
             score = 5.0  # 基础分
             if macd_signal == "金叉":
@@ -262,6 +314,13 @@ class TechnicalAnalysisAgent:
                 score += 1.0
             elif ma5 < ma10 < ma20:
                 score -= 1.0
+            # RPS指标加分
+            if rps_status == "强势":
+                score += 1.5
+            elif rps_status == "中性":
+                score += 0.5
+            else:  # 弱势
+                score -= 0.5
             score = max(1.0, min(10.0, score))
             
             return {
@@ -276,7 +335,12 @@ class TechnicalAnalysisAgent:
                     "volume_ratio": volume_ratio,
                     "ma5": ma5,
                     "ma10": ma10,
-                    "ma20": ma20
+                    "ma20": ma20,
+                    "rps": round(rps_score, 1),
+                    "rps_status": rps_status,
+                    "rps_20d": round(rps_20d, 1),
+                    "rps_60d": round(rps_60d, 1),
+                    "rps_120d": round(rps_120d, 1)
                 },
                 "score": score,
                 "signal": "买入" if score >= 7.5 else ("卖出" if score <= 4.0 else "观望")
@@ -343,6 +407,14 @@ class TechnicalAnalysisAgent:
         elif ma5 < ma10 < ma20:
             score -= 1.0
 
+        # RPS指标加分
+        if rps_status == "强势":
+            score += 1.5
+        elif rps_status == "中性":
+            score += 0.5
+        else:  # 弱势
+            score -= 0.5
+
         # 限制分数范围
         score = max(1.0, min(10.0, score))
 
@@ -408,6 +480,8 @@ class TechnicalAnalysisAgent:
 - KDJ: {signal['indicators']['kdj']}
 - RSI: {signal['indicators']['rsi']}
 - 量比: {signal['indicators']['volume_ratio']:.2f}
+- RPS: {signal['indicators']['rps']:.1f} ({signal['indicators']['rps_status']})
+- RPS(20/60/120): {signal['indicators']['rps_20d']:.1f}/{signal['indicators']['rps_60d']:.1f}/{signal['indicators']['rps_120d']:.1f}
 
 💰 价格信息:
 - 当前价: ¥{signal['price']:.2f}
@@ -491,7 +565,7 @@ if __name__ == "__main__":
             print(f"\n{result['code']} {result['name']}:")
             print(f"  当前价: {result['price']:.2f} ({result['change_percent']:+.2f}%)")
             print(f"  综合评分: {result['score']:.1f}/10 - 信号: {result['signal']}")
-            print(f"  技术指标: MACD={result['indicators']['macd']}, KDJ={result['indicators']['kdj']}, RSI={result['indicators']['rsi']}, 量比={result['indicators']['volume_ratio']:.2f}, MA5={result['indicators']['ma5']:.2f}, MA10={result['indicators']['ma10']:.2f}, MA20={result['indicators']['ma20']:.2f}")
+            print(f"  技术指标: MACD={result['indicators']['macd']}, KDJ={result['indicators']['kdj']}, RSI={result['indicators']['rsi']}, 量比={result['indicators']['volume_ratio']:.2f}, RPS={result['indicators']['rps']:.1f}({result['indicators']['rps_status']}), MA5={result['indicators']['ma5']:.2f}, MA10={result['indicators']['ma10']:.2f}, MA20={result['indicators']['ma20']:.2f}")
 
         # 统计信号
         buy_count = sum(1 for r in results if r['signal'] == '买入')
