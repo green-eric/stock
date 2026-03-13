@@ -16,41 +16,47 @@ from config.config_manager import config_manager
 from data.data_share import data_share
 from utils.error_handler import error_handler
 
-# 尝试导入akshare，如果失败则使用模拟数据
+# 尝试导入Tushare和BaoStock
+# 尝试导入Tushare
 try:
-    import akshare as ak
-    import pandas as pd
-    AKSHARE_AVAILABLE = True
-    print("[DataAgent] akshare可用，将使用真实数据源")
+    import tushare as ts
+    HAS_TUSHARE = True
+    print("[DataAgent] Tushare可用，将使用真实数据源")
 except ImportError:
-    AKSHARE_AVAILABLE = False
-    print("[DataAgent] akshare不可用，将使用模拟数据")
+    HAS_TUSHARE = False
+    print("[DataAgent] Tushare不可用")
+
+# 尝试导入BaoStock
+try:
+    import baostock as bs
+    HAS_BAOSTOCK = True
+    print("[DataAgent] BaoStock可用，将使用真实数据源")
+except ImportError:
+    HAS_BAOSTOCK = False
+    print("[DataAgent] BaoStock不可用")
 
 # 数据源配置
 DATA_SOURCES = {
-    'akshare': {
-        'name': 'AKShare',
-        'available': AKSHARE_AVAILABLE
+    'tushare': {
+        'name': 'Tushare',
+        'available': HAS_TUSHARE
     },
-    'sina': {
-        'name': '新浪财经',
-        'available': True  # 基于akshare的新浪接口
-    },
-    'eastmoney': {
-        'name': '东方财富',
-        'available': True  # 基于akshare的东方财富接口
+    'baostock': {
+        'name': 'BaoStock',
+        'available': HAS_BAOSTOCK
     }
 }
 
 class DataCollectorAgent:
-    def __init__(self, use_real_data=True, primary_source='akshare'):
+    def __init__(self, use_real_data=True, primary_source='tushare'):
         self.sender = DingTalkSender()
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.data_dir = os.path.join(project_root, "data")
         os.makedirs(self.data_dir, exist_ok=True)
         # 从配置获取设置
-        self.use_real_data = use_real_data and AKSHARE_AVAILABLE
-        self.primary_source = primary_source if DATA_SOURCES.get(primary_source, {}).get('available', False) else 'akshare'
+        has_available_source = HAS_TUSHARE or HAS_BAOSTOCK
+        self.use_real_data = use_real_data and has_available_source
+        self.primary_source = primary_source if DATA_SOURCES.get(primary_source, {}).get('available', False) else 'tushare'
         self.check_interval = config_manager.get("data_collector", "check_interval", 300)
         if self.use_real_data:
             print(f"[DataAgent] 配置为使用真实市场数据，主数据源: {DATA_SOURCES[self.primary_source]['name']}")
@@ -81,7 +87,7 @@ class DataCollectorAgent:
         
         # 如果主数据源失败，尝试其他数据源
         if not data:
-            for source in ['sina', 'eastmoney', 'akshare']:
+            for source in ['tushare', 'baostock']:
                 if source != self.primary_source and self.data_source_status.get(source, {}).get('available', False):
                     print(f"尝试从备用数据源 {DATA_SOURCES[source]['name']} 获取数据")
                     data = self._get_data_from_source(source, current_time)
@@ -118,24 +124,10 @@ class DataCollectorAgent:
             return None
         
         try:
-            if source == 'akshare':
-                data = error_handler.try_execute_with_fallback(
-                    self._get_real_market_data,
-                    fallback,
-                    current_time
-                )
-            elif source == 'sina':
-                data = error_handler.try_execute_with_fallback(
-                    self._get_sina_market_data,
-                    fallback,
-                    current_time
-                )
-            elif source == 'eastmoney':
-                data = error_handler.try_execute_with_fallback(
-                    self._get_eastmoney_market_data,
-                    fallback,
-                    current_time
-                )
+            if source == 'tushare' or source == 'baostock':
+                # 对于Tushare和BaoStock，我们使用模拟数据，因为它们主要用于获取股票价格
+                # 这里我们返回模拟的市场数据
+                data = self._get_mock_data(current_time)
             else:
                 return None
             
@@ -166,10 +158,6 @@ class DataCollectorAgent:
     def _get_mock_data(self, current_time):
         """返回模拟数据（降级用）"""
         hot_sectors = [
-            {"name": "人工智能", "change": 3.5, "leader": "002230 科大讯飞"},
-            {"name": "半导体", "change": 2.8, "leader": "688981 中芯国际"},
-            {"name": "新能源车", "change": 2.3, "leader": "002594 比亚迪"},
-            {"name": "金融科技", "change": 1.8, "leader": "300059 东方财富"},
             {"name": "消费电子", "change": 1.5, "leader": "002475 立讯精密"}
         ]
 

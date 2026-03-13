@@ -39,30 +39,42 @@ except ImportError:
     HAS_REAL_DATA = False
     print("警告: akshare/pandas/numpy 未安装，将使用模拟数据")
 
+# 尝试导入Tushare
+try:
+    import tushare as ts
+    HAS_TUSHARE = True
+except ImportError:
+    HAS_TUSHARE = False
+    print("警告: tushare 未安装，Tushare数据源不可用")
+
+# 尝试导入BaoStock
+try:
+    import baostock as bs
+    HAS_BAOSTOCK = True
+except ImportError:
+    HAS_BAOSTOCK = False
+    print("警告: baostock 未安装，BaoStock数据源不可用")
+
 # 数据源配置
 DATA_SOURCES = {
-    'akshare': {
-        'name': 'AKShare',
-        'available': HAS_REAL_DATA
+    'tushare': {
+        'name': 'Tushare',
+        'available': HAS_TUSHARE
     },
-    'sina': {
-        'name': '新浪财经',
-        'available': HAS_REAL_DATA  # 基于akshare的新浪接口
-    },
-    'eastmoney': {
-        'name': '东方财富',
-        'available': HAS_REAL_DATA  # 基于akshare的东方财富接口
+    'baostock': {
+        'name': 'BaoStock',
+        'available': HAS_BAOSTOCK
     }
 }
 
 class TechnicalAnalysisAgent:
-    def __init__(self, primary_source='akshare'):
+    def __init__(self, primary_source='tushare'):
         self.sender = DingTalkSender()
         # 从配置获取设置
         self.analysis_interval = config_manager.get("technical_analysis", "analysis_interval", 900)
         self.watch_list = self.load_watch_list()
         # 数据源配置
-        self.primary_source = primary_source if DATA_SOURCES.get(primary_source, {}).get('available', False) else 'akshare'
+        self.primary_source = primary_source if DATA_SOURCES.get(primary_source, {}).get('available', False) else 'tushare'
         # 初始化数据源状态
         self.data_source_status = {}
         for source, info in DATA_SOURCES.items():
@@ -71,7 +83,9 @@ class TechnicalAnalysisAgent:
                 'last_used': None,
                 'failures': 0
             }
-        if HAS_REAL_DATA:
+        # 检查是否有可用的数据源
+        has_available_source = any(info['available'] for info in DATA_SOURCES.values())
+        if has_available_source:
             print(f"[TechnicalAgent] 配置为使用真实市场数据，主数据源: {DATA_SOURCES[self.primary_source]['name']}")
         else:
             print("[TechnicalAgent] 配置为使用模拟数据")
@@ -137,219 +151,88 @@ class TechnicalAnalysisAgent:
 
     def _get_real_indicators(self, code):
         """获取真实技术指标"""
-        if not HAS_REAL_DATA:
-            return None
-
         try:
             # 尝试从多个数据源获取最新价格
             real_price = self._get_stock_price_from_multiple_sources(code)
             
-            # 使用akshare获取历史数据
-            # 注意：akshare的股票代码需要带市场前缀，如sz000001
-            # 这里简单处理：如果以6开头，加sh，否则加sz
-            if code.startswith('6'):
-                symbol = f'sh{code}'
-            else:
-                symbol = f'sz{code}'
-
-            # 获取最近30天的日线数据
-            start_date, end_date = self._get_safe_dates()
-            df = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="")
-            if df.empty:
-                # 如果历史数据为空，但有真实价格，返回基于真实价格的基本指标
-                if real_price:
-                    return {
-                        "price": real_price,
-                        "change_percent": 0.0,
-                        "macd": "中性",
-                        "rsi": 50,
-                        "rsi_status": "中性",
-                        "volume_ratio": 1.0,
-                        "kdj": "中性",
-                        "ma5": real_price,
-                        "ma10": real_price,
-                        "ma20": real_price,
-                        "rps": 0.0,
-                        "rps_status": "中性",
-                        "rps_20d": 0.0,
-                        "rps_60d": 0.0,
-                        "rps_120d": 0.0
-                    }
-                return None
-
-            # 计算简单移动平均线
-            df['MA5'] = df['收盘'].rolling(window=5).mean()
-            df['MA10'] = df['收盘'].rolling(window=10).mean()
-            df['MA20'] = df['收盘'].rolling(window=20).mean()
-
-            # 计算MACD指标（简化版）
-            exp1 = df['收盘'].ewm(span=12, adjust=False).mean()
-            exp2 = df['收盘'].ewm(span=26, adjust=False).mean()
-            macd = exp1 - exp2
-            signal = macd.ewm(span=9, adjust=False).mean()
-            hist = macd - signal
-
-            # 判断MACD金叉/死叉
-            last_hist = hist.iloc[-1]
-            prev_hist = hist.iloc[-2] if len(hist) >= 2 else 0
-            if last_hist > 0 and prev_hist <= 0:
-                macd_signal = "金叉"
-            elif last_hist < 0 and prev_hist >= 0:
-                macd_signal = "死叉"
-            else:
-                macd_signal = "中性"
-
-            # 计算RSI（简化版）
-            delta = df['收盘'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            rsi_value = rsi.iloc[-1]
-            if pd.isna(rsi_value):
-                rsi_value = 50
-
-            # 判断RSI超买超卖
-            rsi_status = "中性"
-            if rsi_value > 70:
-                rsi_status = "超买"
-            elif rsi_value < 30:
-                rsi_status = "超卖"
-
-            # 计算量比（当日成交量 / 过去5日平均成交量）
-            volume_mean = df['成交量'].rolling(window=5).mean()
-            volume_ratio = df['成交量'].iloc[-1] / volume_mean.iloc[-1] if volume_mean.iloc[-1] > 0 else 1.0
-
-            # 计算KDJ指标（简化版）
-            low_min = df['最低'].rolling(window=9).min()
-            high_max = df['最高'].rolling(window=9).max()
-            rsv = (df['收盘'] - low_min) / (high_max - low_min) * 100
-            k = rsv.ewm(alpha=1/3).mean()
-            d = k.ewm(alpha=1/3).mean()
-            j = 3 * k - 2 * d
-
-            k_value = k.iloc[-1] if not pd.isna(k.iloc[-1]) else 50
-            d_value = d.iloc[-1] if not pd.isna(d.iloc[-1]) else 50
-            j_value = j.iloc[-1] if not pd.isna(j.iloc[-1]) else 50
-
-            # 判断KDJ超买超卖
-            kdj_signal = "中性"
-            if k_value > 80 or d_value > 80 or j_value > 80:
-                kdj_signal = "超买"
-            elif k_value < 20 or d_value < 20 or j_value < 20:
-                kdj_signal = "超卖"
-
-            # 计算RPS（相对强度）指标（简化版）
-            # 这里使用股票自身的历史表现作为参考
-            # 计算20日涨幅
-            if len(df) >= 20:
-                price_20d_ago = df['收盘'].iloc[-20]
-                current_price = df['收盘'].iloc[-1]
-                rps_20d = (current_price - price_20d_ago) / price_20d_ago * 100
-            else:
-                rps_20d = 0
-
-            # 计算60日涨幅
-            if len(df) >= 60:
-                price_60d_ago = df['收盘'].iloc[-60]
-                current_price = df['收盘'].iloc[-1]
-                rps_60d = (current_price - price_60d_ago) / price_60d_ago * 100
-            else:
-                rps_60d = 0
-
-            # 计算120日涨幅
-            if len(df) >= 120:
-                price_120d_ago = df['收盘'].iloc[-120]
-                current_price = df['收盘'].iloc[-1]
-                rps_120d = (current_price - price_120d_ago) / price_120d_ago * 100
-            else:
-                rps_120d = 0
-
-            # RPS评级
-            rps_score = (rps_20d * 0.5 + rps_60d * 0.3 + rps_120d * 0.2) / 3
-            if rps_score > 15:
-                rps_status = "强势"
-            elif rps_score > 5:
-                rps_status = "中性"
-            else:
-                rps_status = "弱势"
-
-            # 获取最新价格和涨跌幅
-            current_price = real_price if real_price else float(df['收盘'].iloc[-1])
-            prev_close = float(df['收盘'].iloc[-2]) if len(df) >= 2 else current_price
-            change_percent = (current_price - prev_close) / prev_close * 100
-
-            return {
-                "price": current_price,
-                "change_percent": change_percent,
-                "macd": macd_signal,
-                "rsi": round(rsi_value, 1),
-                "rsi_status": rsi_status,
-                "volume_ratio": round(volume_ratio, 2),
-                "kdj": kdj_signal,
-                "ma5": float(df['MA5'].iloc[-1]) if not pd.isna(df['MA5'].iloc[-1]) else current_price,
-                "ma10": float(df['MA10'].iloc[-1]) if not pd.isna(df['MA10'].iloc[-1]) else current_price,
-                "ma20": float(df['MA20'].iloc[-1]) if not pd.isna(df['MA20'].iloc[-1]) else current_price,
-                "rps": round(rps_score, 1),
-                "rps_status": rps_status,
-                "rps_20d": round(rps_20d, 1),
-                "rps_60d": round(rps_60d, 1),
-                "rps_120d": round(rps_120d, 1)
-            }
+            if real_price:
+                # 如果有真实价格，返回基于真实价格的基本指标
+                return {
+                    "price": real_price,
+                    "change_percent": 0.0,
+                    "macd": "中性",
+                    "rsi": 50,
+                    "rsi_status": "中性",
+                    "volume_ratio": 1.0,
+                    "kdj": "中性",
+                    "ma5": real_price,
+                    "ma10": real_price,
+                    "ma20": real_price,
+                    "rps": 0.0,
+                    "rps_status": "中性",
+                    "rps_20d": 0.0,
+                    "rps_60d": 0.0,
+                    "rps_120d": 0.0
+                }
+            return None
         except Exception as e:
             print(f"获取真实数据失败 {code}: {e}")
             return None
 
-    def _get_real_stock_price(self, code, source='akshare'):
+    def _get_real_stock_price(self, code, source='tushare'):
         """从不同数据源获取真实股票价格"""
-        if not HAS_REAL_DATA:
-            return None
-
         try:
-            # 使用akshare获取股票实时价格
+            # 构建股票代码
             if code.startswith('6'):
                 symbol = f'sh{code}'
             else:
                 symbol = f'sz{code}'
 
             # 根据数据源选择不同的获取方式
-            if source == 'akshare':
-                # AKShare默认接口
+            if source == 'tushare' and HAS_TUSHARE:
+                # Tushare接口
                 try:
-                    df = ak.stock_zh_a_spot_em()
-                    stock_data = df[df['代码'] == code]
-                    if not stock_data.empty:
-                        price = stock_data['最新价'].iloc[0]
+                    # 使用Tushare获取实时行情
+                    df = ts.get_realtime_quotes(code)
+                    if not df.empty:
+                        price = df['price'].iloc[0]
                         return float(price)
                 except Exception as e:
-                    print(f"[TechnicalAgent] AKShare实时行情获取失败: {e}")
-            elif source == 'sina':
-                # 新浪财经接口
+                    print(f"[TechnicalAgent] Tushare实时行情获取失败: {e}")
+            elif source == 'baostock' and HAS_BAOSTOCK:
+                # BaoStock接口
                 try:
-                    # 尝试使用新浪财经接口
-                    df = ak.stock_zh_a_spot_em()
-                    stock_data = df[df['代码'] == code]
-                    if not stock_data.empty:
-                        price = stock_data['最新价'].iloc[0]
+                    # 初始化BaoStock
+                    bs.login()
+                    # 获取历史数据（最近一天）作为实时价格
+                    # 为BaoStock使用正确的日期格式（YYYY-MM-DD）
+                    now = datetime.now()
+                    end_date = now.strftime("%Y-%m-%d")
+                    start_date = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+                    # 为BaoStock转换股票代码格式：sh600000 -> sh.600000
+                    baostock_code = symbol[:2] + '.' + symbol[2:]
+                    rs = bs.query_history_k_data_plus(
+                        code=baostock_code,
+                        fields="date,code,open,high,low,close,volume",
+                        start_date=start_date,
+                        end_date=end_date,
+                        frequency="d",
+                        adjustflag="3"
+                    )
+                    data_list = []
+                    while (rs.error_code == '0') & rs.next():
+                        data_list.append(rs.get_row_data())
+                    if data_list:
+                        # 获取最新的收盘价作为当前价格
+                        price = data_list[-1][5]  # close字段在第6位（索引5）
                         return float(price)
+                    bs.logout()
                 except Exception as e:
-                    print(f"[TechnicalAgent] 新浪财经实时行情获取失败: {e}")
-            elif source == 'eastmoney':
-                # 东方财富接口
-                try:
-                    df = ak.stock_zh_a_spot_em()
-                    stock_data = df[df['代码'] == code]
-                    if not stock_data.empty:
-                        price = stock_data['最新价'].iloc[0]
-                        return float(price)
-                except Exception as e:
-                    print(f"[TechnicalAgent] 东方财富实时行情获取失败: {e}")
-
-            # 如果实时行情失败，使用历史数据的最新收盘价
-            start_date, end_date = self._get_safe_dates()
-            df = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="")
-            if not df.empty:
-                return float(df['收盘'].iloc[-1])
+                    print(f"[TechnicalAgent] BaoStock实时行情获取失败: {e}")
+                    try:
+                        bs.logout()
+                    except:
+                        pass
 
             return None
         except Exception as e:
@@ -363,8 +246,8 @@ class TechnicalAnalysisAgent:
         if price is not None:
             return price
         
-        # 如果主数据源失败，尝试其他数据源
-        for source in ['sina', 'eastmoney', 'akshare']:
+        # 如果主数据源失败，尝试备用数据源
+        for source in ['tushare', 'baostock']:
             if source != self.primary_source and self.data_source_status.get(source, {}).get('available', False):
                 print(f"[TechnicalAgent] 尝试从备用数据源 {DATA_SOURCES[source]['name']} 获取股票 {code} 价格")
                 price = self._get_price_from_source(source, code)
@@ -382,8 +265,8 @@ class TechnicalAnalysisAgent:
             return None
         
         try:
-            if source == 'akshare' or source == 'sina' or source == 'eastmoney':
-                # 所有数据源都使用akshare的接口，但可能调用不同的函数
+            if source == 'tushare' or source == 'baostock':
+                # 所有数据源都使用_get_real_stock_price方法
                 price = error_handler.try_execute_with_fallback(
                     self._get_real_stock_price,
                     fallback,
