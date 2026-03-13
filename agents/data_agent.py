@@ -35,16 +35,6 @@ except ImportError:
     HAS_BAOSTOCK = False
     print("[DataAgent] BaoStock不可用")
 
-# 尝试导入akshare
-try:
-    import akshare as ak
-    import pandas as pd
-    HAS_AKSHARE = True
-    print("[DataAgent] AkShare可用，将使用真实数据源")
-except ImportError:
-    HAS_AKSHARE = False
-    print("[DataAgent] AkShare不可用")
-
 # 数据源配置
 DATA_SOURCES = {
     'tushare': {
@@ -160,55 +150,116 @@ class DataCollectorAgent:
 
 
     def _get_hot_sectors(self):
-        """使用akshare获取热点板块（涨幅前5）"""
+        """获取热点板块（涨幅前5）"""
         return error_handler.try_execute(self._get_real_hot_sectors)
     
     def _get_real_hot_sectors(self):
         """获取真实热点板块数据"""
-        if not HAS_AKSHARE:
-            raise ImportError("AkShare不可用，无法获取热点板块数据")
-            
-        sector_df = ak.stock_sector_spot()
-        if sector_df.empty:
-            raise ValueError("板块数据为空")
-
-        # 确保有涨跌幅列
-        if '涨跌幅' not in sector_df.columns:
-            # 尝试其他可能的列名
-            if '涨幅' in sector_df.columns:
-                change_col = '涨幅'
-            else:
-                change_col = sector_df.columns[5]  # 假设第6列为涨跌幅
-        else:
-            change_col = '涨跌幅'
-
-        # 转换为数值，处理百分号
-        sector_df[change_col] = sector_df[change_col].astype(str).str.replace('%', '').astype(float)
-
-        # 按涨跌幅降序排序，取前5
-        top_sectors = sector_df.nlargest(5, change_col)
-
-        hot_sectors = []
-        for _, row in top_sectors.iterrows():
-            sector_name = row['板块'] if '板块' in row else row.iloc[1]  # 板块名称列
-            change = round(float(row[change_col]), 2)
-            # 获取领涨股（假设股票代码列存在）
-            leader_code = row['股票代码'] if '股票代码' in row else ''
-            leader_name = row['股票名称'] if '股票名称' in row else ''
-            leader = f"{leader_code} {leader_name}".strip()
-            if not leader:
-                leader = "未知"
-
-            hot_sectors.append({
-                "name": sector_name,
-                "change": change,
-                "leader": leader
-            })
-
-        return hot_sectors
+        # 尝试从Tushare获取板块数据
+        if HAS_TUSHARE:
+            try:
+                # 使用Tushare获取行业板块数据
+                industry = ts.get_industry_classified()
+                if not industry.empty:
+                    # 获取每个行业的涨幅
+                    sectors = {}
+                    for _, row in industry.iterrows():
+                        code = row['code']
+                        name = row['name']
+                        industry_name = row['c_name']
+                        
+                        # 获取股票实时行情
+                        try:
+                            quote = ts.get_realtime_quotes(code)
+                            if not quote.empty:
+                                price = float(quote['price'].iloc[0])
+                                pre_close = float(quote['pre_close'].iloc[0])
+                                change = round((price - pre_close) / pre_close * 100, 2)
+                                
+                                if industry_name not in sectors or change > sectors[industry_name]['change']:
+                                    sectors[industry_name] = {
+                                        "name": industry_name,
+                                        "change": change,
+                                        "leader": f"{code} {name}"
+                                    }
+                        except Exception as e:
+                            print(f"获取股票 {code} 行情失败: {e}")
+                    
+                    # 按涨幅排序，取前5
+                    hot_sectors = sorted(sectors.values(), key=lambda x: x['change'], reverse=True)[:5]
+                    return hot_sectors
+            except Exception as e:
+                print(f"Tushare获取板块数据失败: {e}")
+        
+        # 尝试从BaoStock获取板块数据
+        if HAS_BAOSTOCK:
+            try:
+                # 初始化BaoStock
+                bs.login()
+                # 获取行业板块数据
+                industry = bs.query_industry_classified()
+                data_list = []
+                while (industry.error_code == '0') & industry.next():
+                    data_list.append(industry.get_row_data())
+                bs.logout()
+                
+                if data_list:
+                    sectors = {}
+                    for row in data_list:
+                        code = row[1]
+                        name = row[2]
+                        industry_name = row[3]
+                        
+                        # 获取股票历史数据作为当前价格
+                        try:
+                            bs.login()
+                            rs = bs.query_history_k_data_plus(
+                                code=code,
+                                fields="date,close",
+                                start_date=(datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d"),
+                                end_date=datetime.now().strftime("%Y-%m-%d"),
+                                frequency="d",
+                                adjustflag="3"
+                            )
+                            price_list = []
+                            while (rs.error_code == '0') & rs.next():
+                                price_list.append(rs.get_row_data())
+                            bs.logout()
+                            
+                            if price_list and len(price_list) >= 2:
+                                # 计算涨幅
+                                current_price = float(price_list[-1][1])
+                                prev_price = float(price_list[-2][1])
+                                change = round((current_price - prev_price) / prev_price * 100, 2)
+                                
+                                if industry_name not in sectors or change > sectors[industry_name]['change']:
+                                    sectors[industry_name] = {
+                                        "name": industry_name,
+                                        "change": change,
+                                        "leader": f"{code} {name}"
+                                    }
+                        except Exception as e:
+                            print(f"获取股票 {code} 行情失败: {e}")
+                            try:
+                                bs.logout()
+                            except:
+                                pass
+                    
+                    # 按涨幅排序，取前5
+                    hot_sectors = sorted(sectors.values(), key=lambda x: x['change'], reverse=True)[:5]
+                    return hot_sectors
+            except Exception as e:
+                print(f"BaoStock获取板块数据失败: {e}")
+                try:
+                    bs.logout()
+                except:
+                    pass
+        
+        # 如果所有数据源都失败，返回空列表
+        return []
 
     def _get_capital_flow(self):
-        """使用akshare获取资金流向数据"""
+        """获取资金流向数据"""
         return error_handler.try_execute(self._get_real_capital_flow)
     
     def _get_real_capital_flow(self):
@@ -219,41 +270,61 @@ class DataCollectorAgent:
             "retail_net_in": 0.0
         }
 
-        if not HAS_AKSHARE:
-            return capital_flow
-
         # 1. 北向资金 (沪深港通)
         def get_northbound_flow():
-            try:
-                hsgt_summary = ak.stock_hsgt_fund_flow_summary_em()
-                if not hsgt_summary.empty:
-                    # 筛选北向资金（资金方向为北向）
-                    northbound = hsgt_summary[hsgt_summary['资金方向'] == '北向']
-                    if not northbound.empty:
-                        # 成交净买额（元），转换为亿
-                        net_buy = northbound.iloc[-1]['成交净买额']
-                        if pd.notna(net_buy):
-                            capital_flow['northbound_in'] = round(float(net_buy) / 100000000, 2)
-            except Exception as e:
-                print(f"[DataAgent] 北向资金获取失败: {e}")
+            # 尝试从Tushare获取北向资金数据
+            if HAS_TUSHARE:
+                try:
+                    # 使用Tushare获取沪深港通资金流向
+                    north_money = ts.get_hsgt_top10()
+                    if not north_money.empty:
+                        # 计算北向资金净流入
+                        net_in = north_money['net_amount'].sum()
+                        capital_flow['northbound_in'] = round(net_in / 100000000, 2)
+                except Exception as e:
+                    print(f"[DataAgent] Tushare北向资金获取失败: {e}")
+            
+            # 尝试从BaoStock获取北向资金数据
+            if HAS_BAOSTOCK and capital_flow['northbound_in'] == 0:
+                try:
+                    bs.login()
+                    # 获取沪深港通资金流向
+                    hsgt = bs.query_hsgt_flow()
+                    data_list = []
+                    while (hsgt.error_code == '0') & hsgt.next():
+                        data_list.append(hsgt.get_row_data())
+                    bs.logout()
+                    
+                    if data_list:
+                        # 取最新数据
+                        latest = data_list[-1]
+                        north_in = float(latest[1])  # 沪股通当日净流入
+                        south_in = float(latest[3])  # 深股通当日净流入
+                        capital_flow['northbound_in'] = round((north_in + south_in) / 10000, 2)  # 转换为亿
+                except Exception as e:
+                    print(f"[DataAgent] BaoStock北向资金获取失败: {e}")
+                    try:
+                        bs.logout()
+                    except:
+                        pass
 
         # 2. 主力资金和散户资金
         def get_market_flow():
-            try:
-                market_flow = ak.stock_market_fund_flow()
-                if not market_flow.empty:
-                    latest = market_flow.iloc[-1]
-                    # 主力净流入-净额（元），转换为亿
-                    main_net = latest['主力净流入-净额']
-                    if pd.notna(main_net):
-                        capital_flow['main_net_in'] = round(float(main_net) / 100000000, 2)
-
-                    # 小单净流入-净额（元）作为散户资金，转换为亿
-                    retail_net = latest['小单净流入-净额']
-                    if pd.notna(retail_net):
-                        capital_flow['retail_net_in'] = round(float(retail_net) / 100000000, 2)
-            except Exception as e:
-                print(f"[DataAgent] 市场资金流向获取失败: {e}")
+            # 尝试从Tushare获取资金流向数据
+            if HAS_TUSHARE:
+                try:
+                    # 使用Tushare获取大盘资金流向
+                    money_flow = ts.get_money_flow('sh')  # 上证指数
+                    if not money_flow.empty:
+                        latest = money_flow.iloc[-1]
+                        # 主力净流入
+                        main_net = latest['large_net']
+                        capital_flow['main_net_in'] = round(main_net / 100000000, 2)
+                        # 散户资金（小单净流入）
+                        retail_net = latest['small_net']
+                        capital_flow['retail_net_in'] = round(retail_net / 100000000, 2)
+                except Exception as e:
+                    print(f"[DataAgent] Tushare市场资金流向获取失败: {e}")
 
         # 执行获取资金流向
         get_northbound_flow()
@@ -261,157 +332,7 @@ class DataCollectorAgent:
 
         return capital_flow
     
-    def _get_sina_market_data(self, current_time):
-        """从新浪财经获取市场数据"""
-        try:
-            print("[DataAgent] 从新浪财经获取数据")
-            
-            # 1. 获取新浪财经板块数据
-            sector_df = ak.stock_sector_spot()  # 新浪财经数据也可以通过akshare获取
-            hot_sectors = []
-            
-            if not sector_df.empty:
-                # 确保有涨跌幅列
-                if '涨跌幅' not in sector_df.columns:
-                    if '涨幅' in sector_df.columns:
-                        change_col = '涨幅'
-                    else:
-                        change_col = sector_df.columns[5]
-                else:
-                    change_col = '涨跌幅'
 
-                # 转换为数值，处理百分号
-                sector_df[change_col] = sector_df[change_col].astype(str).str.replace('%', '').astype(float)
-
-                # 按涨跌幅降序排序，取前5
-                top_sectors = sector_df.nlargest(5, change_col)
-
-                for _, row in top_sectors.iterrows():
-                    sector_name = row['板块'] if '板块' in row else row.iloc[1]
-                    change = round(float(row[change_col]), 2)
-                    leader_code = row['股票代码'] if '股票代码' in row else ''
-                    leader_name = row['股票名称'] if '股票名称' in row else ''
-                    leader = f"{leader_code} {leader_name}".strip()
-                    if not leader:
-                        leader = "未知"
-
-                    hot_sectors.append({
-                        "name": sector_name,
-                        "change": change,
-                        "leader": leader
-                    })
-            
-            # 2. 获取资金流向（使用新浪财经数据）
-            capital_flow = {
-                "northbound_in": 0.0,
-                "main_net_in": 0.0,
-                "retail_net_in": 0.0
-            }
-            
-            # 尝试获取新浪财经资金流向数据
-            try:
-                # 使用akshare的新浪财经接口
-                market_flow = ak.stock_market_fund_flow()
-                if not market_flow.empty:
-                    latest = market_flow.iloc[-1]
-                    main_net = latest['主力净流入-净额']
-                    if pd.notna(main_net):
-                        capital_flow['main_net_in'] = round(float(main_net) / 100000000, 2)
-                    retail_net = latest['小单净流入-净额']
-                    if pd.notna(retail_net):
-                        capital_flow['retail_net_in'] = round(float(retail_net) / 100000000, 2)
-            except Exception as e:
-                print(f"[DataAgent] 新浪财经资金流向获取失败: {e}")
-            
-            return {
-                "timestamp": current_time,
-                "hot_sectors": hot_sectors,
-                "capital_flow": capital_flow,
-                "data_source": "sina"
-            }
-        except Exception as e:
-            print(f"[DataAgent] 新浪财经数据获取失败: {e}")
-            return None
-    
-    def _get_eastmoney_market_data(self, current_time):
-        """从东方财富获取市场数据"""
-        try:
-            print("[DataAgent] 从东方财富获取数据")
-            
-            # 1. 获取东方财富板块数据
-            sector_df = ak.stock_sector_spot()  # 东方财富数据也可以通过akshare获取
-            hot_sectors = []
-            
-            if not sector_df.empty:
-                # 确保有涨跌幅列
-                if '涨跌幅' not in sector_df.columns:
-                    if '涨幅' in sector_df.columns:
-                        change_col = '涨幅'
-                    else:
-                        change_col = sector_df.columns[5]
-                else:
-                    change_col = '涨跌幅'
-
-                # 转换为数值，处理百分号
-                sector_df[change_col] = sector_df[change_col].astype(str).str.replace('%', '').astype(float)
-
-                # 按涨跌幅降序排序，取前5
-                top_sectors = sector_df.nlargest(5, change_col)
-
-                for _, row in top_sectors.iterrows():
-                    sector_name = row['板块'] if '板块' in row else row.iloc[1]
-                    change = round(float(row[change_col]), 2)
-                    leader_code = row['股票代码'] if '股票代码' in row else ''
-                    leader_name = row['股票名称'] if '股票名称' in row else ''
-                    leader = f"{leader_code} {leader_name}".strip()
-                    if not leader:
-                        leader = "未知"
-
-                    hot_sectors.append({
-                        "name": sector_name,
-                        "change": change,
-                        "leader": leader
-                    })
-            
-            # 2. 获取资金流向（使用东方财富数据）
-            capital_flow = {
-                "northbound_in": 0.0,
-                "main_net_in": 0.0,
-                "retail_net_in": 0.0
-            }
-            
-            # 尝试获取东方财富资金流向数据
-            try:
-                # 使用akshare的东方财富接口
-                hsgt_summary = ak.stock_hsgt_fund_flow_summary_em()
-                if not hsgt_summary.empty:
-                    northbound = hsgt_summary[hsgt_summary['资金方向'] == '北向']
-                    if not northbound.empty:
-                        net_buy = northbound.iloc[-1]['成交净买额']
-                        if pd.notna(net_buy):
-                            capital_flow['northbound_in'] = round(float(net_buy) / 100000000, 2)
-                
-                market_flow = ak.stock_market_fund_flow()
-                if not market_flow.empty:
-                    latest = market_flow.iloc[-1]
-                    main_net = latest['主力净流入-净额']
-                    if pd.notna(main_net):
-                        capital_flow['main_net_in'] = round(float(main_net) / 100000000, 2)
-                    retail_net = latest['小单净流入-净额']
-                    if pd.notna(retail_net):
-                        capital_flow['retail_net_in'] = round(float(retail_net) / 100000000, 2)
-            except Exception as e:
-                print(f"[DataAgent] 东方财富资金流向获取失败: {e}")
-            
-            return {
-                "timestamp": current_time,
-                "hot_sectors": hot_sectors,
-                "capital_flow": capital_flow,
-                "data_source": "eastmoney"
-            }
-        except Exception as e:
-            print(f"[DataAgent] 东方财富数据获取失败: {e}")
-            return None
 
     def send_market_summary(self):
         """发送市场总结到钉钉"""
