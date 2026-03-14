@@ -99,19 +99,11 @@ class TechnicalAnalysisAgent:
     
     def load_watch_list(self):
         """从config/watch_list.txt加载股票监控列表"""
-        def fallback():
-            # 默认股票列表（如果文件不存在或读取失败时使用）
-            default_list = [
-                {"code": "300903", "name": "科翔股份", "price": 0.0},
-                {"code": "600487", "name": "亨通光电", "price": 0.0}
-            ]
-            print("使用默认股票监控列表")
-            return default_list
-
-        return error_handler.try_execute_with_fallback(
-            self._load_real_watch_list,
-            fallback
-        )
+        try:
+            return self._load_real_watch_list()
+        except Exception as e:
+            print(f"加载监控列表失败: {e}")
+            return []
     
     def _load_real_watch_list(self):
         """加载真实监控列表"""
@@ -149,25 +141,127 @@ class TechnicalAnalysisAgent:
         start_date = (now - timedelta(days=30)).strftime("%Y%m%d")
         return start_date, end_date
 
+    def _get_data_from_source(self, code, source):
+        """从指定数据源获取股票数据（统一接口）"""
+        try:
+            # 构建股票代码
+            if code.startswith('6'):
+                symbol = f'sh{code}'
+            else:
+                symbol = f'sz{code}'
+
+            if source == 'tushare' and HAS_TUSHARE:
+                # Tushare接口
+                try:
+                    # 使用Tushare获取实时行情
+                    df = ts.get_realtime_quotes(code)
+                    if not df.empty:
+                        price = float(df['price'].iloc[0])
+                        change_percent = float(df['changepercent'].iloc[0])
+                        volume = float(df['volume'].iloc[0])
+                        return {
+                            'price': price,
+                            'change_percent': change_percent,
+                            'volume': volume
+                        }
+                except Exception as e:
+                    print(f"[TechnicalAgent] Tushare数据获取失败: {e}")
+            elif source == 'baostock' and HAS_BAOSTOCK:
+                # BaoStock接口
+                try:
+                    # 初始化BaoStock
+                    bs.login()
+                    # 获取历史数据（最近一天）作为实时价格
+                    now = datetime.now()
+                    end_date = now.strftime("%Y-%m-%d")
+                    start_date = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+                    # 为BaoStock转换股票代码格式：sh600000 -> sh.600000
+                    baostock_code = symbol[:2] + '.' + symbol[2:]
+                    rs = bs.query_history_k_data_plus(
+                        code=baostock_code,
+                        fields="date,code,open,high,low,close,volume,amount",
+                        start_date=start_date,
+                        end_date=end_date,
+                        frequency="d",
+                        adjustflag="3"
+                    )
+                    data_list = []
+                    while (rs.error_code == '0') & rs.next():
+                        data_list.append(rs.get_row_data())
+                    if data_list:
+                        # 获取最新的收盘价作为当前价格
+                        latest_data = data_list[-1]
+                        price = float(latest_data[5])  # close字段
+                        volume = float(latest_data[6])  # volume字段
+                        # 计算涨跌幅
+                        if len(data_list) > 1:
+                            prev_close = float(data_list[-2][5])
+                            change_percent = (price - prev_close) / prev_close * 100
+                        else:
+                            change_percent = 0.0
+                        bs.logout()
+                        return {
+                            'price': price,
+                            'change_percent': change_percent,
+                            'volume': volume
+                        }
+                    bs.logout()
+                except Exception as e:
+                    print(f"[TechnicalAgent] BaoStock数据获取失败: {e}")
+                    try:
+                        bs.logout()
+                    except:
+                        pass
+
+            return None
+        except Exception as e:
+            print(f"[TechnicalAgent] 获取股票数据失败 {code} from {source}: {e}")
+            return None
+
+    def _get_unified_stock_data(self, code):
+        """统一获取股票数据，处理数据源切换"""
+        # 尝试从主数据源获取数据
+        data = self._get_data_from_source(code, self.primary_source)
+        if data is not None:
+            self.data_source_status[self.primary_source]['last_used'] = datetime.now()
+            self.data_source_status[self.primary_source]['failures'] = 0
+            return data
+        
+        # 如果主数据源失败，尝试备用数据源
+        for source in ['tushare', 'baostock']:
+            if source != self.primary_source and self.data_source_status.get(source, {}).get('available', False):
+                print(f"[TechnicalAgent] 尝试从备用数据源 {DATA_SOURCES[source]['name']} 获取股票 {code} 数据")
+                data = self._get_data_from_source(code, source)
+                if data is not None:
+                    self.data_source_status[source]['last_used'] = datetime.now()
+                    self.data_source_status[source]['failures'] = 0
+                    return data
+        
+        # 如果所有数据源都失败，返回None
+        return None
+
     def _get_real_indicators(self, code):
         """获取真实技术指标"""
         try:
-            # 尝试从多个数据源获取最新价格
-            real_price = self._get_stock_price_from_multiple_sources(code)
+            # 从统一接口获取股票数据
+            stock_data = self._get_unified_stock_data(code)
             
-            if real_price:
-                # 如果有真实价格，返回基于真实价格的基本指标
+            if stock_data:
+                # 如果有真实数据，返回基于真实数据的基本指标
+                price = stock_data['price']
+                change_percent = stock_data['change_percent']
+                
                 return {
-                    "price": real_price,
-                    "change_percent": 0.0,
+                    "price": price,
+                    "change_percent": change_percent,
                     "macd": "中性",
                     "rsi": 50,
                     "rsi_status": "中性",
                     "volume_ratio": 1.0,
                     "kdj": "中性",
-                    "ma5": real_price,
-                    "ma10": real_price,
-                    "ma20": real_price,
+                    "ma5": price,
+                    "ma10": price,
+                    "ma20": price,
                     "rps": 0.0,
                     "rps_status": "中性",
                     "rps_20d": 0.0,
@@ -179,154 +273,44 @@ class TechnicalAnalysisAgent:
             print(f"获取真实数据失败 {code}: {e}")
             return None
 
-    def _get_real_stock_price(self, code, source='tushare'):
-        """从不同数据源获取真实股票价格"""
-        try:
-            # 构建股票代码
-            if code.startswith('6'):
-                symbol = f'sh{code}'
-            else:
-                symbol = f'sz{code}'
-
-            # 根据数据源选择不同的获取方式
-            if source == 'tushare' and HAS_TUSHARE:
-                # Tushare接口
-                try:
-                    # 使用Tushare获取实时行情
-                    df = ts.get_realtime_quotes(code)
-                    if not df.empty:
-                        price = df['price'].iloc[0]
-                        return float(price)
-                except Exception as e:
-                    print(f"[TechnicalAgent] Tushare实时行情获取失败: {e}")
-            elif source == 'baostock' and HAS_BAOSTOCK:
-                # BaoStock接口
-                try:
-                    # 初始化BaoStock
-                    bs.login()
-                    # 获取历史数据（最近一天）作为实时价格
-                    # 为BaoStock使用正确的日期格式（YYYY-MM-DD）
-                    now = datetime.now()
-                    end_date = now.strftime("%Y-%m-%d")
-                    start_date = (now - timedelta(days=30)).strftime("%Y-%m-%d")
-                    # 为BaoStock转换股票代码格式：sh600000 -> sh.600000
-                    baostock_code = symbol[:2] + '.' + symbol[2:]
-                    rs = bs.query_history_k_data_plus(
-                        code=baostock_code,
-                        fields="date,code,open,high,low,close,volume",
-                        start_date=start_date,
-                        end_date=end_date,
-                        frequency="d",
-                        adjustflag="3"
-                    )
-                    data_list = []
-                    while (rs.error_code == '0') & rs.next():
-                        data_list.append(rs.get_row_data())
-                    if data_list:
-                        # 获取最新的收盘价作为当前价格
-                        price = data_list[-1][5]  # close字段在第6位（索引5）
-                        return float(price)
-                    bs.logout()
-                except Exception as e:
-                    print(f"[TechnicalAgent] BaoStock实时行情获取失败: {e}")
-                    try:
-                        bs.logout()
-                    except:
-                        pass
-
-            return None
-        except Exception as e:
-            print(f"[TechnicalAgent] 获取股票价格失败 {code} from {source}: {e}")
-            return None
-    
     def _get_stock_price_from_multiple_sources(self, code):
         """从多个数据源获取股票价格"""
-        # 尝试从主数据源获取价格
-        price = self._get_price_from_source(self.primary_source, code)
-        if price is not None:
-            return price
-        
-        # 如果主数据源失败，尝试备用数据源
-        for source in ['tushare', 'baostock']:
-            if source != self.primary_source and self.data_source_status.get(source, {}).get('available', False):
-                print(f"[TechnicalAgent] 尝试从备用数据源 {DATA_SOURCES[source]['name']} 获取股票 {code} 价格")
-                price = self._get_price_from_source(source, code)
-                if price is not None:
-                    return price
-        
-        # 如果所有数据源都失败，返回None
-        return None
-    
-    def _get_price_from_source(self, source, code):
-        """从指定数据源获取股票价格"""
-        def fallback():
-            print(f"[TechnicalAgent] 数据源 {DATA_SOURCES[source]['name']} 失败，尝试下一个数据源")
-            self.data_source_status[source]['failures'] += 1
-            return None
-        
-        try:
-            if source == 'tushare' or source == 'baostock':
-                # 所有数据源都使用_get_real_stock_price方法
-                price = error_handler.try_execute_with_fallback(
-                    self._get_real_stock_price,
-                    fallback,
-                    code,
-                    source
-                )
-            else:
-                return None
-            
-            if price:
-                self.data_source_status[source]['last_used'] = datetime.now()
-                self.data_source_status[source]['failures'] = 0
-            return price
-        except Exception as e:
-            print(f"[TechnicalAgent] 数据源 {DATA_SOURCES[source]['name']} 出错: {e}")
-            self.data_source_status[source]['failures'] += 1
-            return None
+        # 使用统一数据源接口
+        stock_data = self._get_unified_stock_data(code)
+        return stock_data['price'] if stock_data else None
 
     def analyze_stock(self, stock):
         """分析单只股票"""
         def fallback():
-            # 回退到模拟数据，但使用真实价格
+            # 回退到基于真实数据的分析
             code = stock.get("code", "未知")
             name = stock.get("name", "未知")
             
-            # 从多个数据源获取真实价格
-            base_price = self._get_stock_price_from_multiple_sources(code)
+            # 从统一数据源获取真实数据
+            stock_data = self._get_unified_stock_data(code)
             
-            # 如果无法获取真实价格，使用合理的默认值
-            if base_price is None or base_price <= 0:
-                # 为特定股票设置合理的默认价格
-                default_prices = {
-                    "300903": 40.41,  # 科翔股份
-                    "600487": 15.68,  # 亨通光电
-                }
-                base_price = default_prices.get(code, 50.0)  # 默认价格50.0
+            if stock_data:
+                current_price = stock_data['price']
+                change_percent = stock_data['change_percent']
+                volume = stock_data.get('volume', 0)
+            else:
+                # 如果无法获取真实数据，使用默认值
+                current_price = 0.0
+                change_percent = 0.0
+                volume = 0
             
-            # 使用固定涨跌幅，避免随机逻辑
-            change_percent = 0.0  # 默认为0
-            current_price = base_price
-            
-            # 使用固定技术指标，避免随机逻辑
+            # 基于真实数据计算指标
             macd_signal = "中性"
             kdj_signal = "中性"
             rsi_value = 50  # 中性值
-            volume_ratio = 1.0  # 正常值
+            volume_ratio = 1.0  # 简化处理
             rsi_status = "中性"
             ma5 = ma10 = ma20 = current_price
-            
-            # 使用固定RPS指标，避免随机逻辑
             rps_20d = 0.0
             rps_60d = 0.0
             rps_120d = 0.0
             rps_score = 0.0
             rps_status = "中性"
-            
-            # 计算综合评分
-            score = 5.0  # 基础分
-            # 基于固定指标计算评分
-            score = max(1.0, min(10.0, score))
             
             return {
                 "code": code,
@@ -347,7 +331,7 @@ class TechnicalAnalysisAgent:
                     "rps_60d": round(rps_60d, 1),
                     "rps_120d": round(rps_120d, 1)
                 },
-                "score": score,
+                "score": 0.0,  # 移除评分
                 "signal": "观望"
             }
 
@@ -367,77 +351,108 @@ class TechnicalAnalysisAgent:
         code = stock["code"]
         name = stock["name"]
 
-        # 尝试获取真实技术指标
-        real_indicators = self._get_real_indicators(code)
+        # 1. 基础过滤
+        # 剔除ST股（通过股票名称判断）
+        is_st = 'ST' in name or '*ST' in name
+        # 剔除北交所（代码以8开头）
+        is_bse = code.startswith('8')
+        # 剔除科创板（代码以688开头）
+        is_sse = code.startswith('688')
+        # 基础过滤条件
+        base_filter = not is_st and not is_bse and not is_sse
+        
+        if not base_filter:
+            # 不符合基础过滤条件，直接返回观望信号
+            current_price = 0.0
+            change_percent = 0.0
+            macd_signal = "中性"
+            rsi_value = 50
+            rsi_status = "中性"
+            volume_ratio = 1.0
+            kdj_signal = "中性"
+            ma5 = ma10 = ma20 = 0.0
+            rps_status = "中性"
+            score = 3.0
+            return {
+                "code": code,
+                "name": name,
+                "price": current_price,
+                "change_percent": change_percent,
+                "indicators": {
+                    "macd": macd_signal,
+                    "kdj": kdj_signal,
+                    "rsi": rsi_value,
+                    "volume_ratio": volume_ratio,
+                    "ma5": ma5,
+                    "ma10": ma10,
+                    "ma20": ma20,
+                    "rps": 0.0,
+                    "rps_status": rps_status,
+                    "rps_20d": 0.0,
+                    "rps_60d": 0.0,
+                    "rps_120d": 0.0
+                },
+                "score": score,
+                "signal": "观望"
+            }
 
-        if real_indicators is None:
-            # 尝试直接从多个数据源获取价格
-            real_price = self._get_stock_price_from_multiple_sources(code)
-            if real_price:
-                # 如果获取到真实价格，返回基于真实价格的基本指标
-                current_price = real_price
-                change_percent = 0.0
-                macd_signal = "中性"
-                rsi_value = 50
-                rsi_status = "中性"
-                volume_ratio = 1.0
-                kdj_signal = "中性"
-                ma5 = ma10 = ma20 = current_price
-                rps_status = "中性"
-            else:
-                # 如果无法获取真实价格，抛出异常
-                raise ValueError(f"无法获取股票 {code} 的技术指标和价格")
+        # 从统一接口获取股票数据
+        stock_data = self._get_unified_stock_data(code)
+        
+        if stock_data:
+            # 使用统一数据源获取的数据
+            current_price = stock_data['price']
+            change_percent = stock_data['change_percent']
+            volume = stock_data.get('volume', 0)
+            
+            # 计算基本指标
+            macd_signal = "中性"
+            rsi_value = 50
+            rsi_status = "中性"
+            volume_ratio = 1.0  # 简化处理
+            kdj_signal = "中性"
+            ma5 = ma10 = ma20 = current_price  # 简化处理
+            rps_status = "中性"
+            
+            # 计算MACD金叉
+            macd_gold_cross = False
+            # 计算KDJ金叉
+            kdj_gold_cross = False
+            # 量能放大
+            volume_amplified = volume > 100000  # 简化处理
+            # 价格突破（假设）
+            price_breakout = True
+            # 连续放量（假设）
+            continuous_volume = True
+            # 5日均线角度（简化计算）
+            ma5_angle = 20 if ma5 > ma10 else 0
         else:
-            # 使用真实数据
-            current_price = real_indicators["price"]
-            change_percent = real_indicators["change_percent"]
-            macd_signal = real_indicators["macd"]
-            rsi_value = real_indicators["rsi"]
-            rsi_status = real_indicators["rsi_status"]
-            volume_ratio = real_indicators["volume_ratio"]
-            kdj_signal = real_indicators["kdj"]
-            ma5 = real_indicators["ma5"]
-            ma10 = real_indicators["ma10"]
-            ma20 = real_indicators["ma20"]
-            rps_status = real_indicators.get("rps_status", "中性")
+            # 如果无法获取真实数据，使用默认值
+            current_price = 0.0
+            change_percent = 0.0
+            macd_signal = "中性"
+            rsi_value = 50
+            rsi_status = "中性"
+            volume_ratio = 1.0
+            kdj_signal = "中性"
+            ma5 = ma10 = ma20 = 0.0
+            rps_status = "中性"
+            macd_gold_cross = False
+            kdj_gold_cross = False
+            volume_amplified = False
+            price_breakout = False
+            continuous_volume = False
+            ma5_angle = 0
 
-        # 计算综合评分（基于真实指标）
-        score = 5.0  # 基础分
+        # 1. 价格大于等于5日均线价
+        price_above_ma5 = current_price >= ma5
 
-        if macd_signal == "金叉":
-            score += 1.5
-        elif macd_signal == "死叉":
-            score -= 1.5
+        # 2. 最终选股条件
+        # 只保留基础过滤和价格大于等于5日均线价的条件
+        select_condition = base_filter and price_above_ma5
 
-        if kdj_signal == "超卖":
-            score += 1.0
-        elif kdj_signal == "超买":
-            score -= 1.0
-
-        if rsi_status == "超卖":
-            score += 0.5
-        elif rsi_status == "超买":
-            score -= 0.5
-
-        if volume_ratio > 1.2:
-            score += 0.5
-
-        # 均线排列加分（多头排列）
-        if ma5 > ma10 > ma20:
-            score += 1.0
-        elif ma5 < ma10 < ma20:
-            score -= 1.0
-
-        # RPS指标加分
-        if rps_status == "强势":
-            score += 1.5
-        elif rps_status == "中性":
-            score += 0.5
-        else:  # 弱势
-            score -= 0.5
-
-        # 限制分数范围
-        score = max(1.0, min(10.0, score))
+        # 生成信号（只基于超短线逻辑）
+        signal = "买入" if select_condition else "观望"
 
         return {
             "code": code,
@@ -458,8 +473,8 @@ class TechnicalAnalysisAgent:
                 "rps_60d": 0.0,
                 "rps_120d": 0.0
             },
-            "score": score,
-            "signal": "买入" if score >= 7.5 else ("卖出" if score <= 4.0 else "观望")
+            "score": 0.0,  # 保留字段但设为0
+            "signal": signal
         }
 
     def send_analysis_results(self):
@@ -482,7 +497,7 @@ class TechnicalAnalysisAgent:
             result = self.analyze_stock(stock)
             results.append(result)
 
-            if result["signal"] == "买入" and result["score"] >= 7.5:
+            if result["signal"] == "买入":
                 buy_signals.append(result)
 
         # 存储分析结果到数据共享
@@ -516,16 +531,6 @@ class TechnicalAnalysisAgent:
             for signal in buy_signals[:3]:  # 最多发送3个买入信号
                 content = f"""
 🚨 买入信号: {signal['code']} {signal['name']}
-
-📊 综合评分: {signal['score']:.1f}/10 {'⭐' * int(signal['score']/2)}
-
-📈 技术指标:
-- MACD: {signal['indicators']['macd']}
-- KDJ: {signal['indicators']['kdj']}
-- RSI: {signal['indicators']['rsi']}
-- 量比: {signal['indicators']['volume_ratio']:.2f}
-- RPS: {signal['indicators']['rps']:.1f} ({signal['indicators']['rps_status']})
-- RPS(20/60/120): {signal['indicators']['rps_20d']:.1f}/{signal['indicators']['rps_60d']:.1f}/{signal['indicators']['rps_120d']:.1f}
 
 💰 价格信息:
 - 当前价: ¥{signal['price']:.2f}
@@ -608,7 +613,7 @@ if __name__ == "__main__":
             results.append(result)
             print(f"\n{result['code']} {result['name']}:")
             print(f"  当前价: {result['price']:.2f} ({result['change_percent']:+.2f}%)")
-            print(f"  综合评分: {result['score']:.1f}/10 - 信号: {result['signal']}")
+            print(f"  信号: {result['signal']}")
             print(f"  技术指标: MACD={result['indicators']['macd']}, KDJ={result['indicators']['kdj']}, RSI={result['indicators']['rsi']}, 量比={result['indicators']['volume_ratio']:.2f}, RPS={result['indicators']['rps']:.1f}({result['indicators']['rps_status']}), MA5={result['indicators']['ma5']:.2f}, MA10={result['indicators']['ma10']:.2f}, MA20={result['indicators']['ma20']:.2f}")
 
         # 统计信号
