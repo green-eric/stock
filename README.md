@@ -77,7 +77,6 @@
 ├── 📂 config/                    # 配置文件
 │   ├── config_manager.py                # 配置管理器
 │   ├── data_collector.json              # 数据采集配置
-│   ├── monitor.json                     # 监控配置
 │   ├── monitor_config.json              # 监控配置
 │   ├── risk_controller.json             # 风险控制配置
 │   ├── strategy_analyzer.json           # 策略分析配置
@@ -579,7 +578,6 @@ python ./agents/technical_agent.py
 ### 问题反馈
 - **GitHub Issues**: 提交技术问题
 - **钉钉群**: 实时技术支持
-- **邮件**: Eric
 
 ### 文档资源
 - [系统架构设计](agents/dingtalk_integration.md)
